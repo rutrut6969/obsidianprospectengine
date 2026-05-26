@@ -5,15 +5,24 @@ const PUBLIC_PAGE_PREFIXES = ["/login", "/setup-password", "/invite"];
 const PUBLIC_API_PREFIXES = [
   "/api/auth/login",
   "/api/auth/setup-password",
+  "/api/auth/change-password",
   "/api/auth/logout",
   "/api/invite/accept",
 ];
 
 function isPublicPath(pathname: string): boolean {
-  if (PUBLIC_PAGE_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+  if (
+    PUBLIC_PAGE_PREFIXES.some(
+      (p) => pathname === p || pathname.startsWith(`${p}/`),
+    )
+  ) {
     return true;
   }
-  if (PUBLIC_API_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+  if (
+    PUBLIC_API_PREFIXES.some(
+      (p) => pathname === p || pathname.startsWith(`${p}/`),
+    )
+  ) {
     return true;
   }
   return false;
@@ -36,13 +45,15 @@ export async function middleware(request: NextRequest) {
   } catch {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json(
-        { error: "Server misconfiguration: SESSION_SECRET missing or invalid." },
-        { status: 500 }
+        {
+          error: "Server misconfiguration: SESSION_SECRET missing or invalid.",
+        },
+        { status: 500 },
       );
     }
     return new NextResponse(
       "Server misconfiguration: SESSION_SECRET must be set (32+ characters).",
-      { status: 500 }
+      { status: 500 },
     );
   }
 
@@ -69,7 +80,7 @@ export async function middleware(request: NextRequest) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json(
         { error: "Password change required" },
-        { status: 403 }
+        { status: 403 },
       );
     }
     return NextResponse.redirect(new URL("/change-password", request.url));

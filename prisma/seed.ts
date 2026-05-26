@@ -2,6 +2,7 @@ import { PrismaClient, UserRole } from "@prisma/client";
 import { hashPassword } from "../src/lib/auth/password";
 import { SUPER_ADMIN_EMAIL, normalizeEmail } from "../src/lib/auth/constants";
 import { randomBytes } from "crypto";
+import "dotenv/config";
 
 const prisma = new PrismaClient();
 
@@ -9,7 +10,7 @@ async function main() {
   const email = normalizeEmail(SUPER_ADMIN_EMAIL);
   const existing = await prisma.user.findUnique({ where: { email } });
 
-  if (existing?.passwordHash) {
+  if (existing?.passwordHash && !process.env.ADMIN_INITIAL_PASSWORD) {
     console.log(`Super admin already exists: ${email}`);
     return;
   }
