@@ -72,6 +72,19 @@ export async function POST(request: NextRequest) {
             responseStatus: auditResult.responseStatus,
             loadTimeMs: auditResult.loadTimeMs,
             notes: auditResult.notes,
+            mobileFriendly: auditResult.mobileFriendly,
+            brokenLinks: auditResult.brokenLinks,
+            pageSpeedScore: auditResult.pageSpeedScore,
+            accessibilityNotes: auditResult.accessibilityNotes,
+            seoNotes: auditResult.seoNotes,
+            responsivenessNotes: auditResult.responsivenessNotes,
+            ctaQuality: auditResult.ctaQuality,
+            professionalismScore: auditResult.professionalismScore,
+            summary: auditResult.summary,
+            weaknesses: auditResult.weaknesses,
+            improvements: auditResult.improvements,
+            leadQualityScore: auditResult.leadQualityScore,
+            conversionOpportunityScore: auditResult.conversionOpportunityScore,
           };
         } else if (!place.websiteUrl) {
           websiteStatus = "NO_WEBSITE";

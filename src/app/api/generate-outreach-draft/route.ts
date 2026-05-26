@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { WebsiteStatus } from "@prisma/client";
+import { OutreachChannel, Prisma, WebsiteStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { generateOutreachDraft } from "@/lib/outreach";
+import { generateOutreachDraft, selectChannelMessage } from "@/lib/outreach";
 
 export async function POST(request: NextRequest) {
   try {
@@ -26,14 +26,19 @@ export async function POST(request: NextRequest) {
 
     let name = businessName;
     let status = websiteStatus ?? "UNKNOWN";
+    let leadContext: Prisma.BusinessLeadGetPayload<{
+      include: { websiteAudits: { orderBy: { createdAt: "desc" }; take: 1 } };
+    }> | null = null;
 
     if (businessLeadId) {
       const lead = await prisma.businessLead.findUnique({
         where: { id: businessLeadId },
+        include: { websiteAudits: { orderBy: { createdAt: "desc" }, take: 1 } },
       });
       if (!lead) {
         return NextResponse.json({ error: "Lead not found" }, { status: 404 });
       }
+      leadContext = lead;
       name = lead.name;
       status = lead.websiteStatus;
     }
@@ -45,27 +50,55 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { subject, message } = generateOutreachDraft({
+    const generated = await generateOutreachDraft({
       businessName: name,
       websiteStatus: status,
+      category: leadContext?.category,
+      city: leadContext?.city,
+      state: leadContext?.state,
+      rating: leadContext?.rating,
+      reviewCount: leadContext?.reviewCount,
+      websiteUrl: leadContext?.websiteUrl,
+      auditSummary: leadContext?.websiteAudits[0]?.summary,
+      auditWeaknesses: leadContext?.websiteAudits[0]?.weaknesses,
+      channel: channel as OutreachChannel,
       senderName,
       companyName,
     });
+    const message = selectChannelMessage(generated, channel as OutreachChannel);
 
     if (save && businessLeadId) {
-      const draft = await prisma.outreachDraft.create({
-        data: {
-          businessLeadId,
-          subject,
-          message,
-          channel,
-          status: "DRAFT",
-        },
+      const draft = await prisma.$transaction(async (tx) => {
+        const created = await tx.outreachDraft.create({
+          data: {
+            businessLeadId,
+            subject: generated.subject,
+            message,
+            channel,
+            status: "DRAFT",
+            aiProvider: generated.aiProvider,
+            aiReasoning: generated.aiReasoning,
+            aiScore: generated.aiScore,
+            websiteAuditSummary: generated.websiteAuditSummary,
+          },
+        });
+        await tx.leadActivity.create({
+          data: {
+            businessLeadId,
+            type: "OUTREACH_GENERATED",
+            title: `${channel} outreach draft generated`,
+            body:
+              generated.aiProvider === "openai"
+                ? "Generated with optional OpenAI integration."
+                : "Generated with fallback template rules.",
+          },
+        });
+        return created;
       });
-      return NextResponse.json({ subject, message, draft });
+      return NextResponse.json({ subject: generated.subject, message, draft });
     }
 
-    return NextResponse.json({ subject, message });
+    return NextResponse.json({ subject: generated.subject, message });
   } catch (error) {
     console.error("[generate-outreach-draft]", error);
     return NextResponse.json(

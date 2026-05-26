@@ -7,7 +7,7 @@ import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { loadSearchResults } from "@/lib/search-session";
 import { SearchLeadResult } from "@/types/lead";
-import { Search } from "lucide-react";
+import { Download, Search } from "lucide-react";
 
 export default function ResultsPage() {
   const [leads, setLeads] = useState<SearchLeadResult[]>([]);
@@ -20,6 +20,12 @@ export default function ResultsPage() {
     setMeta(storedMeta);
     setLoaded(true);
   }, []);
+
+  function exportSession(format: "csv" | "xlsx" | "pdf" | "docx") {
+    const params = new URLSearchParams({ format });
+    if (meta?.category) params.set("category", meta.category);
+    window.location.href = `/api/leads/export?${params.toString()}`;
+  }
 
   return (
     <div className="space-y-8">
@@ -34,12 +40,25 @@ export default function ResultsPage() {
             </p>
           )}
         </div>
-        <Link href="/search">
-          <Button variant="secondary">
-            <Search className="h-4 w-4" />
-            New Search
-          </Button>
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          {(["csv", "xlsx", "pdf", "docx"] as const).map((format) => (
+            <Button
+              key={format}
+              type="button"
+              variant="secondary"
+              onClick={() => exportSession(format)}
+            >
+              <Download className="h-4 w-4" />
+              {format.toUpperCase()}
+            </Button>
+          ))}
+          <Link href="/search">
+            <Button variant="secondary">
+              <Search className="h-4 w-4" />
+              New Search
+            </Button>
+          </Link>
+        </div>
       </div>
 
       <Card>

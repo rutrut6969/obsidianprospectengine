@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { LeadStatus, WebsiteStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { saveLeadWithDuplicateProtection } from "@/lib/leads/service";
 
 export async function POST(request: NextRequest) {
   try {
@@ -28,31 +28,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "name is required" }, { status: 400 });
     }
 
-    const leadData = {
-      name: name.trim(),
-      category: category ?? null,
-      address: address ?? null,
-      city: city ?? null,
-      state: state ?? null,
-      phone: phone ?? null,
-      websiteUrl: websiteUrl ?? null,
-      googleMapsUrl: googleMapsUrl ?? null,
-      rating: rating != null ? Number(rating) : null,
-      reviewCount: reviewCount != null ? Number(reviewCount) : null,
-      websiteStatus: (websiteStatus as WebsiteStatus) ?? "UNKNOWN",
-      leadScore: leadScore != null ? Number(leadScore) : 0,
-      notes: notes ?? null,
-      status: (status as LeadStatus) ?? "SAVED",
-      placeId: placeId ?? null,
-    };
-
-    const lead = placeId
-      ? await prisma.businessLead.upsert({
-          where: { placeId },
-          create: leadData,
-          update: { ...leadData, status: leadData.status },
-        })
-      : await prisma.businessLead.create({ data: leadData });
+    const { lead, duplicate, created } = await saveLeadWithDuplicateProtection({
+      placeId,
+      name,
+      category,
+      address,
+      city,
+      state,
+      phone,
+      websiteUrl,
+      googleMapsUrl,
+      rating,
+      reviewCount,
+      websiteStatus,
+      leadScore,
+      notes,
+      status,
+    });
 
     if (audit) {
       await prisma.websiteAudit.create({
@@ -67,11 +59,24 @@ export async function POST(request: NextRequest) {
           responseStatus: audit.responseStatus ?? null,
           loadTimeMs: audit.loadTimeMs ?? null,
           notes: audit.notes ?? null,
+          mobileFriendly: audit.mobileFriendly ?? null,
+          brokenLinks: audit.brokenLinks ?? null,
+          pageSpeedScore: audit.pageSpeedScore ?? null,
+          accessibilityNotes: audit.accessibilityNotes ?? null,
+          seoNotes: audit.seoNotes ?? null,
+          responsivenessNotes: audit.responsivenessNotes ?? null,
+          ctaQuality: audit.ctaQuality ?? null,
+          professionalismScore: audit.professionalismScore ?? null,
+          summary: audit.summary ?? null,
+          weaknesses: audit.weaknesses ?? [],
+          improvements: audit.improvements ?? [],
+          leadQualityScore: audit.leadQualityScore ?? null,
+          conversionOpportunityScore: audit.conversionOpportunityScore ?? null,
         },
       });
     }
 
-    return NextResponse.json({ lead });
+    return NextResponse.json({ lead, duplicate, created });
   } catch (error) {
     console.error("[save-lead]", error);
     return NextResponse.json(

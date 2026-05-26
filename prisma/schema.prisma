@@ -36,7 +36,52 @@ enum OutreachChannel {
 enum OutreachStatus {
   DRAFT
   APPROVED
+  REJECTED
   SENT
+  FAILED
+}
+
+enum DeliveryStatus {
+  QUEUED
+  SENT
+  FAILED
+  UNAVAILABLE
+}
+
+enum TemplateType {
+  COLD_OUTREACH
+  FOLLOW_UP
+  AUDIT_DELIVERY
+  REMINDER
+  PROPOSAL
+  ABANDONED_INQUIRY
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+}
+
+enum ActivityType {
+  NOTE
+  STATUS_CHANGE
+  OUTREACH_GENERATED
+  OUTREACH_APPROVED
+  OUTREACH_REJECTED
+  OUTREACH_SENT
+  LEAD_UPDATED
+  LEAD_DELETED
+  LEAD_RESTORED
+  EXPORT_CREATED
+}
+
+enum ExportFormat {
+  CSV
+  XLSX
+  PDF
+  DOCX
 }
 
 model BusinessLead {
@@ -56,12 +101,32 @@ model BusinessLead {
   notes         String?
   status        LeadStatus     @default(NEW)
   placeId       String?        @unique
+  normalizedName    String?
+  normalizedAddress String?
+  normalizedPhone   String?
+  normalizedWebsite String?
+  duplicateKey      String?
+  tags              String[]   @default([])
+  followUpAt        DateTime?
+  deletedAt         DateTime?
+  isArchived        Boolean    @default(false)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
   websiteAudits   WebsiteAudit[]
   outreachDrafts  OutreachDraft[]
+  outreachLogs    OutreachLog[]
   campaignLeads   CampaignLead[]
+  activities      LeadActivity[]
+
+  @@index([deletedAt])
+  @@index([isArchived])
+  @@index([normalizedPhone])
+  @@index([normalizedWebsite])
+  @@index([duplicateKey])
+  @@index([category])
+  @@index([city, state])
+  @@index([leadScore])
 }
 
 model WebsiteAudit {
@@ -76,6 +141,19 @@ model WebsiteAudit {
   responseStatus  Int?
   loadTimeMs      Int?
   notes           String?
+  mobileFriendly  Boolean?
+  brokenLinks     Int?
+  pageSpeedScore  Int?
+  accessibilityNotes String?
+  seoNotes        String?
+  responsivenessNotes String?
+  ctaQuality      String?
+  professionalismScore Int?
+  summary         String?
+  weaknesses      String[]     @default([])
+  improvements    String[]     @default([])
+  leadQualityScore Int?
+  conversionOpportunityScore Int?
   createdAt       DateTime     @default(now())
 
   businessLead BusinessLead @relation(fields: [businessLeadId], references: [id], onDelete: Cascade)
@@ -84,14 +162,67 @@ model WebsiteAudit {
 model OutreachDraft {
   id             String          @id @default(cuid())
   businessLeadId String
+  templateId     String?
   subject        String?
   message        String
   channel        OutreachChannel @default(EMAIL)
   status         OutreachStatus  @default(DRAFT)
+  aiProvider     String?
+  aiReasoning    String?
+  aiScore        Int?
+  websiteAuditSummary String?
+  approvedAt     DateTime?
+  rejectedAt     DateTime?
+  sentAt         DateTime?
+  failureReason  String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
   businessLead BusinessLead @relation(fields: [businessLeadId], references: [id], onDelete: Cascade)
+  template     EmailTemplate? @relation(fields: [templateId], references: [id])
+  logs         OutreachLog[]
+
+  @@index([status])
+  @@index([channel])
+  @@index([updatedAt])
+}
+
+model EmailTemplate {
+  id          String       @id @default(cuid())
+  name        String
+  type        TemplateType @default(COLD_OUTREACH)
+  subject     String
+  html        String
+  text        String
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  drafts OutreachDraft[]
+
+  @@index([type])
+  @@index([isActive])
+}
+
+model OutreachLog {
+  id                String          @id @default(cuid())
+  outreachDraftId   String
+  businessLeadId    String
+  channel           OutreachChannel
+  deliveryStatus    DeliveryStatus  @default(QUEUED)
+  provider          String
+  providerMessageId String?
+  error             String?
+  sentAt            DateTime?
+  openedAt          DateTime?
+  clickedAt         DateTime?
+  createdAt         DateTime        @default(now())
+
+  outreachDraft OutreachDraft @relation(fields: [outreachDraftId], references: [id], onDelete: Cascade)
+  businessLead   BusinessLead @relation(fields: [businessLeadId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryStatus])
+  @@index([providerMessageId])
 }
 
 model Campaign {
@@ -100,7 +231,17 @@ model Campaign {
   businessCategory String?
   city             String?
   state            String?
+  status           CampaignStatus @default(DRAFT)
   notes            String?
+  sentCount        Int            @default(0)
+  openedCount      Int            @default(0)
+  clickedCount     Int            @default(0)
+  repliedCount     Int            @default(0)
+  bouncedCount     Int            @default(0)
+  sendWindowStart  String?
+  sendWindowEnd    String?
+  scheduledAt      DateTime?
+  pausedAt         DateTime?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
@@ -128,6 +269,34 @@ model SearchRun {
   maxResults  Int
   resultCount Int      @default(0)
   createdAt   DateTime @default(now())
+}
+
+model LeadActivity {
+  id             String       @id @default(cuid())
+  businessLeadId String
+  type           ActivityType
+  title          String
+  body           String?
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+
+  businessLead BusinessLead @relation(fields: [businessLeadId], references: [id], onDelete: Cascade)
+
+  @@index([businessLeadId, createdAt])
+  @@index([type])
+}
+
+model ExportLog {
+  id          String       @id @default(cuid())
+  format      ExportFormat
+  filename    String
+  filters     Json?
+  columnNames String[]
+  rowCount    Int
+  createdAt   DateTime     @default(now())
+
+  @@index([format])
+  @@index([createdAt])
 }
 
 enum UserRole {

@@ -13,6 +13,7 @@ import {
   Gem,
   UserPlus,
   LogOut,
+  ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -91,18 +92,32 @@ export function Sidebar() {
         })}
 
         {isSuperAdmin && (
-          <Link
-            href="/admin/invites"
-            className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-              pathname.startsWith("/admin")
-                ? "bg-purple-600/20 text-purple-300 border border-purple-500/30"
-                : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
-            )}
-          >
-            <UserPlus className="h-4 w-4 shrink-0" />
-            Team Access
-          </Link>
+          <>
+            <Link
+              href="/admin/outreach"
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                pathname.startsWith("/admin/outreach")
+                  ? "bg-purple-600/20 text-purple-300 border border-purple-500/30"
+                  : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+              )}
+            >
+              <ClipboardCheck className="h-4 w-4 shrink-0" />
+              Approvals
+            </Link>
+            <Link
+              href="/admin/invites"
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                pathname.startsWith("/admin/invites")
+                  ? "bg-purple-600/20 text-purple-300 border border-purple-500/30"
+                  : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+              )}
+            >
+              <UserPlus className="h-4 w-4 shrink-0" />
+              Team Access
+            </Link>
+          </>
         )}
       </nav>
 

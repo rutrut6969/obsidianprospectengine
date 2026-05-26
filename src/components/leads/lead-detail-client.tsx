@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -10,6 +11,7 @@ import {
   MapPin,
   Phone,
   Star,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -19,8 +21,9 @@ import {
   LeadStatusBadge,
   WebsiteStatusBadge,
 } from "@/components/lead-badges";
+import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
-import { WebsiteStatus } from "@prisma/client";
+import type { WebsiteStatus } from "@prisma/client";
 
 interface LeadDetail {
   id: string;
@@ -48,6 +51,13 @@ interface LeadDetail {
     responseStatus: number | null;
     loadTimeMs: number | null;
     notes: string | null;
+    mobileFriendly: boolean | null;
+    pageSpeedScore: number | null;
+    professionalismScore: number | null;
+    summary: string | null;
+    weaknesses: string[];
+    improvements: string[];
+    conversionOpportunityScore: number | null;
     createdAt: string;
   }>;
   outreachDrafts: Array<{
@@ -56,7 +66,16 @@ interface LeadDetail {
     message: string;
     channel: string;
     status: string;
+    aiProvider: string | null;
+    aiScore: number | null;
     updatedAt: string;
+  }>;
+  activities: Array<{
+    id: string;
+    type: string;
+    title: string;
+    body: string | null;
+    createdAt: string;
   }>;
 }
 
@@ -69,6 +88,7 @@ export function LeadDetailClient({ id }: { id: string }) {
   const [saving, setSaving] = useState(false);
   const [auditing, setAuditing] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [draftChannel, setDraftChannel] = useState("EMAIL");
 
   async function loadLead() {
     setLoading(true);
@@ -126,7 +146,7 @@ export function LeadDetailClient({ id }: { id: string }) {
     const res = await fetch("/api/generate-outreach-draft", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ businessLeadId: id, save: true }),
+      body: JSON.stringify({ businessLeadId: id, save: true, channel: draftChannel }),
     });
     if (res.ok) await loadLead();
     else {
@@ -137,15 +157,15 @@ export function LeadDetailClient({ id }: { id: string }) {
   }
 
   if (loading) {
-    return <p className="text-slate-500 py-12 text-center">Loading lead…</p>;
+    return <p className="py-12 text-center text-slate-500">Loading lead...</p>;
   }
 
   if (error || !lead) {
     return (
-      <div className="text-center py-12">
+      <div className="py-12 text-center">
         <p className="text-red-300">{error ?? "Lead not found"}</p>
-        <Link href="/leads" className="text-purple-400 text-sm mt-4 inline-block">
-          ← Back to leads
+        <Link href="/leads" className="mt-4 inline-block text-sm text-purple-400">
+          Back to leads
         </Link>
       </div>
     );
@@ -166,21 +186,35 @@ export function LeadDetailClient({ id }: { id: string }) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-100">{lead.name}</h1>
-          <p className="mt-1 text-slate-400">{lead.category}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-2 flex flex-wrap gap-2">
+            {lead.category && <Badge variant="purple">{lead.category}</Badge>}
             <LeadScoreBadge score={lead.leadScore} />
             <WebsiteStatusBadge status={lead.websiteStatus} />
             <LeadStatusBadge status={lead.status} />
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Select
+            value={draftChannel}
+            onChange={(e) => setDraftChannel(e.target.value)}
+            className="w-36"
+            aria-label="Outreach channel"
+          >
+            <option value="EMAIL">Email</option>
+            <option value="SMS">SMS</option>
+            <option value="FACEBOOK">Facebook</option>
+          </Select>
           <Button variant="secondary" loading={auditing} onClick={reaudit}>
             <RefreshCw className="h-4 w-4" />
-            Re-audit Website
+            Re-audit
           </Button>
           <Button loading={generating} onClick={generateDraft}>
-            <Mail className="h-4 w-4" />
-            Generate Outreach
+            {draftChannel === "SMS" ? (
+              <MessageSquare className="h-4 w-4" />
+            ) : (
+              <Mail className="h-4 w-4" />
+            )}
+            Generate Draft
           </Button>
         </div>
       </div>
@@ -191,7 +225,7 @@ export function LeadDetailClient({ id }: { id: string }) {
           <CardBody className="space-y-3 text-sm">
             {lead.address && (
               <p className="flex items-start gap-2 text-slate-300">
-                <MapPin className="h-4 w-4 shrink-0 text-slate-500 mt-0.5" />
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
                 {lead.address}
               </p>
             )}
@@ -229,7 +263,7 @@ export function LeadDetailClient({ id }: { id: string }) {
                 rel="noopener noreferrer"
                 className="text-sm text-slate-400 hover:text-purple-300"
               >
-                View on Google Maps →
+                View on Google Maps
               </a>
             )}
           </CardBody>
@@ -266,7 +300,7 @@ export function LeadDetailClient({ id }: { id: string }) {
                 id="notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="Call notes, follow-up dates…"
+                placeholder="Call notes, follow-up dates..."
               />
             </div>
             <Button loading={saving} onClick={saveUpdates}>
@@ -280,56 +314,59 @@ export function LeadDetailClient({ id }: { id: string }) {
         <CardHeader title="Website Audit" description="Latest automated check" />
         <CardBody>
           {!latestAudit ? (
-            <p className="text-slate-500 text-sm">
-              No audit on file. Click Re-audit Website to run a check.
+            <p className="text-sm text-slate-500">
+              No audit on file. Click Re-audit to run a check.
             </p>
           ) : (
-            <dl className="grid gap-3 sm:grid-cols-2 text-sm">
-              <div>
-                <dt className="text-slate-500">Has website</dt>
-                <dd className="text-slate-200">{latestAudit.hasWebsite ? "Yes" : "No"}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">HTTPS</dt>
-                <dd className="text-slate-200">
-                  {latestAudit.isHttps == null ? "—" : latestAudit.isHttps ? "Yes" : "No"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Broken</dt>
-                <dd className="text-slate-200">{latestAudit.isBroken ? "Yes" : "No"}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Facebook only</dt>
-                <dd className="text-slate-200">
-                  {latestAudit.isFacebookOnly ? "Yes" : "No"}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">HTTP status</dt>
-                <dd className="text-slate-200">{latestAudit.responseStatus ?? "—"}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Load time</dt>
-                <dd className="text-slate-200">
-                  {latestAudit.loadTimeMs != null
-                    ? `${latestAudit.loadTimeMs}ms`
-                    : "—"}
-                </dd>
-              </div>
+            <dl className="grid gap-3 text-sm sm:grid-cols-2">
+              <Info label="Has website" value={latestAudit.hasWebsite ? "Yes" : "No"} />
+              <Info
+                label="HTTPS"
+                value={
+                  latestAudit.isHttps == null ? "-" : latestAudit.isHttps ? "Yes" : "No"
+                }
+              />
+              <Info label="Broken" value={latestAudit.isBroken ? "Yes" : "No"} />
+              <Info
+                label="Facebook only"
+                value={latestAudit.isFacebookOnly ? "Yes" : "No"}
+              />
+              <Info label="HTTP status" value={latestAudit.responseStatus ?? "-"} />
+              <Info
+                label="Load time"
+                value={latestAudit.loadTimeMs != null ? `${latestAudit.loadTimeMs}ms` : "-"}
+              />
+              <Info
+                label="Mobile friendly"
+                value={
+                  latestAudit.mobileFriendly == null
+                    ? "Review needed"
+                    : latestAudit.mobileFriendly
+                      ? "Likely"
+                      : "Needs work"
+                }
+              />
+              <Info label="Page speed score" value={latestAudit.pageSpeedScore ?? "-"} />
+              <Info
+                label="Professionalism"
+                value={latestAudit.professionalismScore ?? "-"}
+              />
+              <Info
+                label="Conversion opportunity"
+                value={latestAudit.conversionOpportunityScore ?? "-"}
+              />
               {latestAudit.homepageTitle && (
-                <div className="sm:col-span-2">
-                  <dt className="text-slate-500">Page title</dt>
-                  <dd className="text-slate-200">{latestAudit.homepageTitle}</dd>
-                </div>
+                <InfoWide label="Page title" value={latestAudit.homepageTitle} />
               )}
-              {latestAudit.notes && (
-                <div className="sm:col-span-2">
-                  <dt className="text-slate-500">Notes</dt>
-                  <dd className="text-slate-400">{latestAudit.notes}</dd>
-                </div>
+              {latestAudit.summary && <InfoWide label="Summary" value={latestAudit.summary} />}
+              {latestAudit.weaknesses?.length > 0 && (
+                <ListWide label="Weaknesses" items={latestAudit.weaknesses} />
               )}
-              <div className="sm:col-span-2 text-xs text-slate-600">
+              {latestAudit.improvements?.length > 0 && (
+                <ListWide label="Suggested improvements" items={latestAudit.improvements} />
+              )}
+              {latestAudit.notes && <InfoWide label="Notes" value={latestAudit.notes} muted />}
+              <div className="text-xs text-slate-600 sm:col-span-2">
                 Audited {formatDate(latestAudit.createdAt)}
               </div>
             </dl>
@@ -340,12 +377,12 @@ export function LeadDetailClient({ id }: { id: string }) {
       <Card>
         <CardHeader
           title="Outreach Drafts"
-          description="Placeholder templates — OpenAI integration coming later"
+          description="Drafts stay queued until a super admin approves them"
         />
         <CardBody className="space-y-4">
           {lead.outreachDrafts.length === 0 ? (
-            <p className="text-slate-500 text-sm">
-              No drafts yet. Click Generate Outreach to create one.
+            <p className="text-sm text-slate-500">
+              No drafts yet. Generate an email, SMS, or Facebook draft.
             </p>
           ) : (
             lead.outreachDrafts.map((draft) => (
@@ -353,15 +390,16 @@ export function LeadDetailClient({ id }: { id: string }) {
                 key={draft.id}
                 className="rounded-lg border border-slate-800 bg-slate-950/50 p-4"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium text-slate-200">
                     {draft.subject ?? "Outreach"}
                   </p>
                   <span className="text-xs text-slate-500">
-                    {draft.channel} · {draft.status} · {formatDate(draft.updatedAt)}
+                    {draft.channel} | {draft.status} | {draft.aiProvider ?? "fallback"} |{" "}
+                    {formatDate(draft.updatedAt)}
                   </span>
                 </div>
-                <pre className="whitespace-pre-wrap text-sm text-slate-400 font-sans">
+                <pre className="whitespace-pre-wrap font-sans text-sm text-slate-400">
                   {draft.message}
                 </pre>
               </div>
@@ -369,6 +407,73 @@ export function LeadDetailClient({ id }: { id: string }) {
           )}
         </CardBody>
       </Card>
+
+      <Card>
+        <CardHeader title="CRM History" description="Notes, status changes, and outreach activity" />
+        <CardBody className="space-y-3">
+          {lead.activities.length === 0 ? (
+            <p className="text-sm text-slate-500">No activity yet.</p>
+          ) : (
+            lead.activities.map((activity) => (
+              <div
+                key={activity.id}
+                className="rounded-lg border border-slate-800 bg-slate-950/50 p-3"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-slate-200">{activity.title}</p>
+                  <span className="text-xs text-slate-500">
+                    {formatDate(activity.createdAt)}
+                  </span>
+                </div>
+                {activity.body && (
+                  <p className="mt-1 text-sm text-slate-400">{activity.body}</p>
+                )}
+              </div>
+            ))
+          )}
+        </CardBody>
+      </Card>
+    </div>
+  );
+}
+
+function Info({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div>
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="text-slate-200">{value}</dd>
+    </div>
+  );
+}
+
+function InfoWide({
+  label,
+  value,
+  muted,
+}: {
+  label: string;
+  value: string;
+  muted?: boolean;
+}) {
+  return (
+    <div className="sm:col-span-2">
+      <dt className="text-slate-500">{label}</dt>
+      <dd className={muted ? "text-slate-400" : "text-slate-200"}>{value}</dd>
+    </div>
+  );
+}
+
+function ListWide({ label, items }: { label: string; items: string[] }) {
+  return (
+    <div className="sm:col-span-2">
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="mt-1 text-slate-400">
+        <ul className="list-disc space-y-1 pl-5">
+          {items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      </dd>
     </div>
   );
 }

@@ -26,6 +26,19 @@ export interface SearchLeadResult {
     responseStatus: number | null;
     loadTimeMs: number | null;
     notes: string | null;
+    mobileFriendly?: boolean | null;
+    brokenLinks?: number | null;
+    pageSpeedScore?: number | null;
+    accessibilityNotes?: string | null;
+    seoNotes?: string | null;
+    responsivenessNotes?: string | null;
+    ctaQuality?: string | null;
+    professionalismScore?: number | null;
+    summary?: string | null;
+    weaknesses?: string[];
+    improvements?: string[];
+    leadQualityScore?: number | null;
+    conversionOpportunityScore?: number | null;
   } | null;
 }
 
