@@ -129,3 +129,37 @@ model SearchRun {
   resultCount Int      @default(0)
   createdAt   DateTime @default(now())
 }
+
+enum UserRole {
+  SUPER_ADMIN
+  USER
+}
+
+model User {
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  passwordHash       String?
+  role               UserRole  @default(USER)
+  isAuthorized       Boolean   @default(false)
+  mustChangePassword Boolean   @default(false)
+  invitedById        String?
+  invitedBy          User?     @relation("UserInvites", fields: [invitedById], references: [id])
+  invitees           User[]    @relation("UserInvites")
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  invitesSent Invite[] @relation("InviteCreator")
+}
+
+model Invite {
+  id          String    @id @default(cuid())
+  email       String
+  token       String    @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdById String
+  createdBy   User      @relation("InviteCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@index([email])
+}

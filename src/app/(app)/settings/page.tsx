@@ -1,6 +1,14 @@
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Key, Database, Sparkles, Mail, MessageSquare } from "lucide-react";
+import {
+  Key,
+  Database,
+  Sparkles,
+  Mail,
+  MessageSquare,
+  Shield,
+  Globe,
+} from "lucide-react";
 
 const envVars = [
   {
@@ -10,6 +18,18 @@ const envVars = [
     icon: Database,
   },
   {
+    key: "SESSION_SECRET",
+    required: true,
+    description: "Signs login cookies — minimum 32 random characters",
+    icon: Shield,
+  },
+  {
+    key: "APP_URL",
+    required: true,
+    description: "Production URL for invite email links (e.g. https://your-app.vercel.app)",
+    icon: Globe,
+  },
+  {
     key: "GOOGLE_PLACES_API_KEY",
     required: true,
     description:
@@ -17,16 +37,22 @@ const envVars = [
     icon: Key,
   },
   {
+    key: "RESEND_API_KEY",
+    required: true,
+    description: "Sends team invite emails from the admin panel",
+    icon: Mail,
+  },
+  {
+    key: "RESEND_FROM_EMAIL",
+    required: true,
+    description: "Verified sender in Resend (e.g. onboarding@obsidian-systems.tech)",
+    icon: Mail,
+  },
+  {
     key: "OPENAI_API_KEY",
     required: false,
     description: "Optional — for AI-powered outreach drafts (not yet wired)",
     icon: Sparkles,
-  },
-  {
-    key: "RESEND_API_KEY",
-    required: false,
-    description: "Optional — for sending email outreach later",
-    icon: Mail,
   },
   {
     key: "TWILIO_ACCOUNT_SID",
@@ -50,7 +76,7 @@ export default function SettingsPage() {
       <Card>
         <CardHeader
           title="Environment Variables"
-          description="Copy .env.example to .env and fill in your values"
+          description="Set these in Vercel → Settings → Environment Variables"
         />
         <CardBody className="space-y-4">
           {envVars.map(({ key, required, description, icon: Icon }) => (
@@ -76,6 +102,21 @@ export default function SettingsPage() {
       </Card>
 
       <Card>
+        <CardHeader title="First-time admin setup" />
+        <CardBody className="text-sm text-slate-400 space-y-2 font-mono">
+          <p className="font-sans text-slate-400 mb-3">
+            After deploying, push schema and seed the super admin from your machine:
+          </p>
+          <p className="text-purple-300">npm run db:push</p>
+          <p className="text-purple-300">npm run db:seed</p>
+          <p className="font-sans text-slate-500 mt-3">
+            Super admin email: isaac.rutledgev@obsidian-systems.tech — you will be
+            prompted to change the password on first login.
+          </p>
+        </CardBody>
+      </Card>
+
+      <Card>
         <CardHeader title="Google Places API Setup" />
         <CardBody className="text-sm text-slate-400 space-y-3">
           <p>
@@ -83,23 +124,6 @@ export default function SettingsPage() {
             <strong className="text-slate-300">Geocoding API</strong> in Google Cloud
             Console. This app uses official REST endpoints only — no HTML scraping.
           </p>
-          <ol className="list-decimal list-inside space-y-2 text-slate-500">
-            <li>Create a project in Google Cloud Console</li>
-            <li>Enable billing (Places has usage-based pricing)</li>
-            <li>Create an API key and restrict it to Places + Geocoding</li>
-            <li>Add the key to <code className="text-purple-300">GOOGLE_PLACES_API_KEY</code></li>
-          </ol>
-        </CardBody>
-      </Card>
-
-      <Card>
-        <CardHeader title="Database Setup" />
-        <CardBody className="text-sm text-slate-400 space-y-2 font-mono">
-          <p className="font-sans text-slate-400 mb-3">
-            After setting DATABASE_URL, run:
-          </p>
-          <p className="text-purple-300">npm run db:push</p>
-          <p className="text-purple-300">npm run dev</p>
         </CardBody>
       </Card>
     </div>

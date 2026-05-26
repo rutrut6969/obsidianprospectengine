@@ -11,20 +11,25 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
+    "db:seed": "tsx prisma/seed.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^6.9.0",
+    "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
+    "jose": "^6.2.3",
     "lucide-react": "^0.511.0",
     "next": "^15.3.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "resend": "^6.12.4",
     "tailwind-merge": "^3.3.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
     "@tailwindcss/postcss": "^4.1.8",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.15.29",
     "@types/react": "^19.1.6",
     "@types/react-dom": "^19.1.5",
@@ -32,6 +37,7 @@
     "eslint-config-next": "^15.3.3",
     "prisma": "^6.9.0",
     "tailwindcss": "^4.1.8",
+    "tsx": "^4.22.3",
     "typescript": "^5.8.3"
   }
 }
