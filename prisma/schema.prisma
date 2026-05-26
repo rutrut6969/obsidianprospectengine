@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WebsiteStatus {
+  NO_WEBSITE
+  HAS_WEBSITE
+  BROKEN_WEBSITE
+  FACEBOOK_ONLY
+  OUTDATED_WEBSITE
+  UNKNOWN
+}
+
+enum LeadStatus {
+  NEW
+  SAVED
+  CONTACTED
+  INTERESTED
+  NOT_INTERESTED
+  CLIENT
+  ARCHIVED
+}
+
+enum OutreachChannel {
+  EMAIL
+  SMS
+  FACEBOOK
+  PHONE
+}
+
+enum OutreachStatus {
+  DRAFT
+  APPROVED
+  SENT
+}
+
+model BusinessLead {
+  id            String         @id @default(cuid())
+  name          String
+  category      String?
+  address       String?
+  city          String?
+  state         String?
+  phone         String?
+  websiteUrl    String?
+  googleMapsUrl String?
+  rating        Float?
+  reviewCount   Int?
+  websiteStatus WebsiteStatus  @default(UNKNOWN)
+  leadScore     Int            @default(0)
+  notes         String?
+  status        LeadStatus     @default(NEW)
+  placeId       String?        @unique
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  websiteAudits   WebsiteAudit[]
+  outreachDrafts  OutreachDraft[]
+  campaignLeads   CampaignLead[]
+}
+
+model WebsiteAudit {
+  id              String       @id @default(cuid())
+  businessLeadId  String
+  hasWebsite      Boolean      @default(false)
+  isBroken        Boolean      @default(false)
+  isHttps         Boolean?
+  isFacebookOnly  Boolean      @default(false)
+  homepageTitle   String?
+  metaDescription String?
+  responseStatus  Int?
+  loadTimeMs      Int?
+  notes           String?
+  createdAt       DateTime     @default(now())
+
+  businessLead BusinessLead @relation(fields: [businessLeadId], references: [id], onDelete: Cascade)
+}
+
+model OutreachDraft {
+  id             String          @id @default(cuid())
+  businessLeadId String
+  subject        String?
+  message        String
+  channel        OutreachChannel @default(EMAIL)
+  status         OutreachStatus  @default(DRAFT)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  businessLead BusinessLead @relation(fields: [businessLeadId], references: [id], onDelete: Cascade)
+}
+
+model Campaign {
+  id               String         @id @default(cuid())
+  name             String
+  businessCategory String?
+  city             String?
+  state            String?
+  notes            String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  leads CampaignLead[]
+}
+
+model CampaignLead {
+  id             String   @id @default(cuid())
+  campaignId     String
+  businessLeadId String
+  createdAt      DateTime @default(now())
+
+  campaign     Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  businessLead BusinessLead @relation(fields: [businessLeadId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, businessLeadId])
+}
+
+model SearchRun {
+  id          String   @id @default(cuid())
+  query       String
+  city        String
+  state       String
+  radius      Int
+  maxResults  Int
+  resultCount Int      @default(0)
+  createdAt   DateTime @default(now())
+}
