@@ -18,9 +18,9 @@ export async function POST(request: NextRequest) {
       newPassword?: string;
     };
 
-    if (!newPassword) {
+    if (!currentPassword || !newPassword) {
       return NextResponse.json(
-        { error: "New password is required." },
+        { error: "Current password and new password are required." },
         { status: 400 }
       );
     }
@@ -38,28 +38,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
 
-    if (auth.session.mustChangePassword) {
-      if (!currentPassword) {
-        return NextResponse.json(
-          { error: "Current password is required." },
-          { status: 400 }
-        );
-      }
-      const valid = await verifyPassword(currentPassword, user.passwordHash);
-      if (!valid) {
-        return NextResponse.json(
-          { error: "Current password is incorrect." },
-          { status: 401 }
-        );
-      }
-    } else if (currentPassword) {
-      const valid = await verifyPassword(currentPassword, user.passwordHash);
-      if (!valid) {
-        return NextResponse.json(
-          { error: "Current password is incorrect." },
-          { status: 401 }
-        );
-      }
+    const valid = await verifyPassword(currentPassword, user.passwordHash);
+    if (!valid) {
+      return NextResponse.json(
+        { error: "Current password is incorrect." },
+        { status: 401 }
+      );
     }
 
     const passwordHash = await hashPassword(newPassword);
@@ -72,6 +56,7 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       email: user.email,
       role: user.role,
+      accountStatus: user.accountStatus,
       mustChangePassword: false,
     });
 

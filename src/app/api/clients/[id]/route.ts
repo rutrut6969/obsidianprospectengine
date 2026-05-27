@@ -23,6 +23,10 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       notes?: string | null;
       upfrontWebsitePrice?: number;
       retainerAmount?: number;
+      retainerPaymentStatus?: "CURRENT" | "DUE_SOON" | "OVERDUE" | "FAILED" | "CANCELED" | "PAUSED";
+      nextPaymentDate?: string | null;
+      squareCustomerId?: string | null;
+      squareSubscriptionId?: string | null;
     };
 
     const client = await prisma.client.update({
@@ -38,6 +42,18 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
           upfrontWebsitePrice: Number(body.upfrontWebsitePrice),
         }),
         ...(body.retainerAmount !== undefined && { retainerAmount: Number(body.retainerAmount) }),
+        ...(body.retainerPaymentStatus && {
+          retainerPaymentStatus: body.retainerPaymentStatus,
+        }),
+        ...(body.nextPaymentDate !== undefined && {
+          nextPaymentDate: body.nextPaymentDate ? new Date(body.nextPaymentDate) : null,
+        }),
+        ...(body.squareCustomerId !== undefined && {
+          squareCustomerId: body.squareCustomerId?.trim() || null,
+        }),
+        ...(body.squareSubscriptionId !== undefined && {
+          squareSubscriptionId: body.squareSubscriptionId?.trim() || null,
+        }),
       },
     });
 

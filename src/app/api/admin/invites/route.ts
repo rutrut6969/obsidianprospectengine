@@ -32,6 +32,8 @@ export async function GET() {
       phoneNumber: true,
       commissionRate: true,
       accountStatus: true,
+      preferredPayoutMethod: true,
+      directDepositStatus: true,
       isAuthorized: true,
       lastLoginAt: true,
       createdAt: true,

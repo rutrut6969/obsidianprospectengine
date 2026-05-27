@@ -16,6 +16,7 @@ export async function GET() {
       closedBy: { select: { id: true, fullName: true, email: true } },
       businessLead: { select: { id: true, name: true, category: true } },
       commissions: true,
+      paymentEvents: { orderBy: { occurredAt: "desc" }, take: 5 },
     },
   });
 
@@ -36,7 +37,11 @@ export async function POST(request: NextRequest) {
       websitePackage?: string | null;
       upfrontWebsitePrice?: number;
       retainerAmount?: number;
+      retainerBillingCycle?: "MONTHLY" | "QUARTERLY" | "ANNUAL";
       retainerStartDate?: string | null;
+      squareCustomerId?: string | null;
+      squareSubscriptionId?: string | null;
+      nextPaymentDate?: string | null;
       paymentStatus?: PaymentStatus;
       status?: ClientStatus;
       notes?: string | null;
@@ -58,7 +63,11 @@ export async function POST(request: NextRequest) {
         websitePackage: body.websitePackage?.trim() || null,
         upfrontWebsitePrice: Number(body.upfrontWebsitePrice ?? 0),
         retainerAmount: Number(body.retainerAmount ?? 0),
+        retainerBillingCycle: body.retainerBillingCycle ?? "MONTHLY",
         retainerStartDate: body.retainerStartDate ? new Date(body.retainerStartDate) : null,
+        squareCustomerId: body.squareCustomerId?.trim() || null,
+        squareSubscriptionId: body.squareSubscriptionId?.trim() || null,
+        nextPaymentDate: body.nextPaymentDate ? new Date(body.nextPaymentDate) : null,
         paymentStatus: body.paymentStatus ?? "UNPAID",
         status: body.status ?? "PROSPECT",
         notes: body.notes?.trim() || null,

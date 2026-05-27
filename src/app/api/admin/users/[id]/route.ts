@@ -46,12 +46,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         email: true,
         fullName: true,
         phoneNumber: true,
-        role: true,
-        commissionRate: true,
-        accountStatus: true,
-        notes: true,
-        updatedAt: true,
-      },
+      role: true,
+      commissionRate: true,
+      accountStatus: true,
+      notes: true,
+      directDepositStatus: true,
+      preferredPayoutMethod: true,
+      updatedAt: true,
+    },
     });
 
     return NextResponse.json({ user });

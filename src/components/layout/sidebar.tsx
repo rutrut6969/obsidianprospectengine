@@ -36,6 +36,8 @@ const nav = [
 
 interface SessionUser {
   email: string;
+  fullName?: string | null;
+  avatarUrl?: string | null;
   role: string;
 }
 
@@ -58,6 +60,12 @@ export function Sidebar() {
   }
 
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
+  const initials = (user?.fullName || user?.email || "?")
+    .split(/[\s@.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
 
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-slate-800 bg-black/40">
@@ -142,9 +150,27 @@ export function Sidebar() {
 
       <div className="border-t border-slate-800 p-4 space-y-3">
         {user && (
-          <p className="text-xs text-slate-400 truncate" title={user.email}>
-            {user.email}
-          </p>
+          <Link
+            href="/profile"
+            className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950/50 p-2 transition-colors hover:border-purple-500/40 hover:bg-slate-900"
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-purple-500/30 bg-purple-600/20 text-sm font-bold text-purple-200">
+              {user.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={user.avatarUrl} alt="" className="h-full w-full object-cover" />
+              ) : (
+                initials
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-slate-100">
+                {user.fullName || "Profile"}
+              </p>
+              <p className="truncate text-xs text-slate-500" title={user.email}>
+                {user.email}
+              </p>
+            </div>
+          </Link>
         )}
         <Button variant="ghost" size="sm" className="w-full justify-start" onClick={logout}>
           <LogOut className="h-4 w-4" />

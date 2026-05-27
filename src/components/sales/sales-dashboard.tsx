@@ -14,7 +14,19 @@ interface ClientRow {
   retainerAmount: number;
   status: string;
   paymentStatus: string;
+  retainerPaymentStatus: string;
+  lastPaymentDate: string | null;
+  nextPaymentDate: string | null;
+  squareCustomerId: string | null;
+  squareSubscriptionId: string | null;
   owner: { fullName: string | null; email: string } | null;
+  paymentEvents?: Array<{
+    id: string;
+    type: string;
+    amount: number | null;
+    message: string | null;
+    occurredAt: string;
+  }>;
 }
 
 interface CommissionRow {
@@ -40,6 +52,7 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
   const [loading, setLoading] = useState(true);
   const [businessName, setBusinessName] = useState("");
   const [amount, setAmount] = useState("");
+  const [retainerAmount, setRetainerAmount] = useState("");
   const [title, setTitle] = useState("");
 
   async function load() {
@@ -63,12 +76,14 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
       body: JSON.stringify({
         businessName,
         upfrontWebsitePrice: Number(amount || 0),
+        retainerAmount: Number(retainerAmount || 0),
         status: "PROSPECT",
       }),
     });
     if (!res.ok) alert((await res.json()).error ?? "Create failed");
     setBusinessName("");
     setAmount("");
+    setRetainerAmount("");
     await load();
   }
 
@@ -91,7 +106,7 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
         <Card>
           <CardHeader title="Add client/prospect" />
           <CardBody>
-            <form onSubmit={createClient} className="grid gap-4 md:grid-cols-3">
+            <form onSubmit={createClient} className="grid gap-4 md:grid-cols-4">
               <div>
                 <Label htmlFor="businessName">Business</Label>
                 <Input id="businessName" value={businessName} onChange={(e) => setBusinessName(e.target.value)} required />
@@ -99,6 +114,10 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
               <div>
                 <Label htmlFor="amount">Upfront price</Label>
                 <Input id="amount" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} />
+              </div>
+              <div>
+                <Label htmlFor="retainerAmount">Monthly retainer</Label>
+                <Input id="retainerAmount" type="number" value={retainerAmount} onChange={(e) => setRetainerAmount(e.target.value)} />
               </div>
               <div className="flex items-end">
                 <Button type="submit">Create Client</Button>
@@ -144,6 +163,7 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
                     <th className="px-4 py-3">Name</th>
                     <th className="px-4 py-3">Amount</th>
                     <th className="px-4 py-3">Status</th>
+                    {view === "clients" && <th className="px-4 py-3">Retainer</th>}
                     <th className="px-4 py-3">Owner</th>
                   </tr>
                 </thead>
@@ -167,8 +187,28 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
                         ).toLocaleString()}
                       </td>
                       <td className="px-4 py-3">
-                        <Badge variant="slate">{"paymentStatus" in row ? row.paymentStatus : row.status}</Badge>
+                        {"retainerPaymentStatus" in row ? (
+                          <PaymentBadge status={row.retainerPaymentStatus} />
+                        ) : (
+                          <Badge variant="slate">
+                            {String("paymentStatus" in row ? row.paymentStatus : row.status)}
+                          </Badge>
+                        )}
                       </td>
+                      {view === "clients" && (
+                        <td className="px-4 py-3 text-slate-400">
+                          {"retainerPaymentStatus" in row ? (
+                            <>
+                              <p>${row.retainerAmount.toLocaleString()} / mo</p>
+                              <p className="text-xs text-slate-500">
+                                Last: {row.lastPaymentDate ? new Date(row.lastPaymentDate).toLocaleDateString() : "-"} | Next: {row.nextPaymentDate ? new Date(row.nextPaymentDate).toLocaleDateString() : "-"}
+                              </p>
+                            </>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-slate-500">
                         {"owner" in row
                           ? row.owner?.fullName ?? row.owner?.email ?? "-"
@@ -186,4 +226,16 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
       </Card>
     </div>
   );
+}
+
+function PaymentBadge({ status }: { status: string }) {
+  const variant =
+    status === "CURRENT"
+      ? "green"
+      : status === "DUE_SOON"
+        ? "amber"
+        : status === "OVERDUE" || status === "FAILED" || status === "CANCELED"
+          ? "red"
+          : "slate";
+  return <Badge variant={variant}>Payment: {status.replace(/_/g, " ")}</Badge>;
 }

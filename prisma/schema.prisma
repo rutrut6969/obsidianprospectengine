@@ -133,6 +133,7 @@ enum PaymentStatus {
 
 enum CommissionStatus {
   PENDING
+  READY_TO_PAY
   APPROVED
   PAID
   VOIDED
@@ -153,6 +154,62 @@ enum ProjectStatus {
   ACTIVE
   COMPLETED
   CANCELED
+}
+
+enum PayoutMethod {
+  CASH_APP
+  PAYPAL
+  VENMO
+  DIRECT_DEPOSIT
+  MANUAL_CASH
+  CHECK
+}
+
+enum BankAccountType {
+  CHECKING
+  SAVINGS
+}
+
+enum DirectDepositStatus {
+  NOT_SETUP
+  PENDING_VERIFICATION
+  ACTIVE
+  DISABLED
+}
+
+enum RetainerBillingCycle {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+}
+
+enum ClientPaymentStatus {
+  CURRENT
+  DUE_SOON
+  OVERDUE
+  FAILED
+  CANCELED
+  PAUSED
+}
+
+enum PaymentEventType {
+  INVOICE_SENT
+  INVOICE_VIEWED
+  PAYMENT_SUCCEEDED
+  PAYMENT_FAILED
+  SUBSCRIPTION_CREATED
+  SUBSCRIPTION_UPDATED
+  SUBSCRIPTION_CANCELED
+  RETAINER_DUE
+  RETAINER_OVERDUE
+}
+
+enum NotificationType {
+  PAYMENT_SUCCEEDED
+  PAYMENT_FAILED
+  PAYMENT_OVERDUE
+  COMMISSION_READY
+  SYSTEM
 }
 
 model BusinessLead {
@@ -447,6 +504,7 @@ model User {
   fullName           String?
   email              String    @unique
   phoneNumber        String?
+  avatarUrl          String?
   passwordHash       String?
   role               UserRole  @default(USER)
   commissionRate     Float     @default(0.10)
@@ -454,6 +512,21 @@ model User {
   isAuthorized       Boolean   @default(false)
   mustChangePassword Boolean   @default(false)
   notes              String?
+  bio                String?
+  preferredPayoutMethod PayoutMethod?
+  cashAppTag         String?
+  paypalEmail        String?
+  venmoHandle        String?
+  payoutLegalName    String?
+  payoutNotes        String?
+  bankName           String?
+  bankAccountType    BankAccountType?
+  bankRoutingEncrypted String?
+  bankRoutingLast4   String?
+  bankAccountEncrypted String?
+  bankAccountLast4   String?
+  directDepositStatus DirectDepositStatus @default(NOT_SETUP)
+  lastProfileUpdatedAt DateTime?
   lastLoginAt        DateTime?
   invitedById        String?
   invitedBy          User?     @relation("UserInvites", fields: [invitedById], references: [id])
@@ -475,6 +548,8 @@ model User {
   commissions      Commission[] @relation("CommissionUser")
   invoices         Invoice[] @relation("InvoiceOwner")
   passwordResets   PasswordResetToken[]
+  notifications     Notification[]
+  paymentEvents     ClientPaymentEvent[] @relation("PaymentEventUser")
 }
 
 model Invite {
@@ -519,8 +594,17 @@ model Client {
   websitePackage      String?
   upfrontWebsitePrice Float         @default(0)
   retainerAmount      Float         @default(0)
+  retainerBillingCycle RetainerBillingCycle @default(MONTHLY)
   retainerStartDate   DateTime?
   paymentStatus       PaymentStatus @default(UNPAID)
+  retainerPaymentStatus ClientPaymentStatus @default(CURRENT)
+  squareCustomerId    String?
+  squareCardId        String?
+  squareSubscriptionId String?
+  latestSquareInvoiceId String?
+  latestSquarePaymentId String?
+  lastPaymentDate     DateTime?
+  nextPaymentDate     DateTime?
   status              ClientStatus  @default(PROSPECT)
   notes               String?
   createdAt           DateTime      @default(now())
@@ -533,12 +617,16 @@ model Client {
   invoices     Invoice[]
   projects     Project[]
   retainers    RetainerPayment[]
+  paymentEvents ClientPaymentEvent[]
 
   @@index([businessLeadId])
   @@index([ownerId])
   @@index([closedById])
   @@index([status])
   @@index([paymentStatus])
+  @@index([retainerPaymentStatus])
+  @@index([squareCustomerId])
+  @@index([squareSubscriptionId])
 }
 
 model Commission {
@@ -643,4 +731,58 @@ model RetainerPayment {
   @@index([clientId])
   @@index([status])
   @@index([dueDate])
+}
+
+model ClientPaymentEvent {
+  id              String           @id @default(cuid())
+  clientId        String
+  userId          String?
+  type            PaymentEventType
+  amount          Float?
+  currency        String?
+  squareEventId   String?
+  squareInvoiceId String?
+  squarePaymentId String?
+  squareSubscriptionId String?
+  status          String?
+  message         String?
+  occurredAt      DateTime         @default(now())
+  createdAt       DateTime         @default(now())
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user   User?  @relation("PaymentEventUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([clientId])
+  @@index([userId])
+  @@index([squareEventId])
+  @@index([type])
+  @@index([occurredAt])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String?
+  readAt    DateTime?
+  metadata  Json?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([type])
+}
+
+model SquareWebhookEvent {
+  id          String   @id @default(cuid())
+  eventId     String?  @unique
+  eventType   String
+  payload     Json
+  processedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([eventType])
+  @@index([processedAt])
 }
