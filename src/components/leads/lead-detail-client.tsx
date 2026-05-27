@@ -12,6 +12,7 @@ import {
   Phone,
   Star,
   MessageSquare,
+  AtSign,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -33,6 +34,9 @@ interface LeadDetail {
   city: string | null;
   state: string | null;
   phone: string | null;
+  primaryEmail: string | null;
+  emailDiscoveryStatus: string;
+  emailConfidence: number | null;
   websiteUrl: string | null;
   googleMapsUrl: string | null;
   rating: number | null;
@@ -77,6 +81,14 @@ interface LeadDetail {
     body: string | null;
     createdAt: string;
   }>;
+  contactMethods: Array<{
+    id: string;
+    type: string;
+    value: string;
+    confidence: number | null;
+    sourceUrl: string | null;
+    isPrimary: boolean;
+  }>;
 }
 
 export function LeadDetailClient({ id }: { id: string }) {
@@ -88,6 +100,7 @@ export function LeadDetailClient({ id }: { id: string }) {
   const [saving, setSaving] = useState(false);
   const [auditing, setAuditing] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [discoveringEmail, setDiscoveringEmail] = useState(false);
   const [draftChannel, setDraftChannel] = useState("EMAIL");
 
   async function loadLead() {
@@ -156,6 +169,18 @@ export function LeadDetailClient({ id }: { id: string }) {
     setGenerating(false);
   }
 
+  async function discoverEmail() {
+    setDiscoveringEmail(true);
+    const res = await fetch(`/api/leads/${id}/discover-email`, { method: "POST" });
+    setDiscoveringEmail(false);
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error ?? "Email discovery failed");
+      return;
+    }
+    await loadLead();
+  }
+
   if (loading) {
     return <p className="py-12 text-center text-slate-500">Loading lead...</p>;
   }
@@ -216,6 +241,10 @@ export function LeadDetailClient({ id }: { id: string }) {
             )}
             Generate Draft
           </Button>
+          <Button variant="secondary" loading={discoveringEmail} onClick={discoverEmail}>
+            <AtSign className="h-4 w-4" />
+            Find Email
+          </Button>
         </div>
       </div>
 
@@ -235,6 +264,19 @@ export function LeadDetailClient({ id }: { id: string }) {
                 <a href={`tel:${lead.phone}`} className="hover:text-purple-300">
                   {lead.phone}
                 </a>
+              </p>
+            )}
+            {lead.primaryEmail && (
+              <p className="flex items-center gap-2 text-slate-300">
+                <AtSign className="h-4 w-4 text-slate-500" />
+                <a href={`mailto:${lead.primaryEmail}`} className="hover:text-purple-300">
+                  {lead.primaryEmail}
+                </a>
+                {lead.emailConfidence != null && (
+                  <span className="text-xs text-slate-500">
+                    {lead.emailConfidence}% confidence
+                  </span>
+                )}
               </p>
             )}
             {lead.rating != null && (
@@ -266,6 +308,21 @@ export function LeadDetailClient({ id }: { id: string }) {
                 View on Google Maps
               </a>
             )}
+            <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+              <p className="text-xs uppercase text-slate-500">Email discovery</p>
+              <p className="mt-1 text-slate-300">{lead.emailDiscoveryStatus.replace(/_/g, " ")}</p>
+              {lead.contactMethods.filter((method) => method.type === "EMAIL").length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {lead.contactMethods
+                    .filter((method) => method.type === "EMAIL")
+                    .map((method) => (
+                      <p key={method.id} className="text-xs text-slate-400">
+                        {method.value} {method.confidence != null ? `(${method.confidence}%)` : ""}
+                      </p>
+                    ))}
+                </div>
+              )}
+            </div>
           </CardBody>
         </Card>
 

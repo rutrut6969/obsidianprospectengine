@@ -28,8 +28,25 @@ export async function GET() {
       id: true,
       email: true,
       role: true,
+      fullName: true,
+      phoneNumber: true,
+      commissionRate: true,
+      accountStatus: true,
       isAuthorized: true,
+      lastLoginAt: true,
       createdAt: true,
+      _count: {
+        select: {
+          ownedLeads: true,
+          campaigns: true,
+          outreachLogs: true,
+          closedClients: true,
+          commissions: true,
+        },
+      },
+      commissions: {
+        select: { commissionAmount: true, status: true },
+      },
     },
   });
 
@@ -41,7 +58,15 @@ export async function POST(request: NextRequest) {
   if ("error" in auth) return auth.error;
 
   try {
-    const { email } = (await request.json()) as { email?: string };
+    const { email, fullName, phoneNumber, role, commissionRate, notes } =
+      (await request.json()) as {
+        email?: string;
+        fullName?: string;
+        phoneNumber?: string;
+        role?: "LEAD_GENERATOR" | "SUPER_ADMIN";
+        commissionRate?: number;
+        notes?: string;
+      };
 
     if (!email?.trim()) {
       return NextResponse.json({ error: "Email is required." }, { status: 400 });
@@ -74,9 +99,36 @@ export async function POST(request: NextRequest) {
     const invite = await prisma.invite.create({
       data: {
         email: normalized,
+        role: role === "SUPER_ADMIN" ? "LEAD_GENERATOR" : "LEAD_GENERATOR",
+        fullName: fullName?.trim() || null,
+        phoneNumber: phoneNumber?.trim() || null,
         token,
         expiresAt,
         createdById: auth.session.userId,
+      },
+    });
+
+    await prisma.user.upsert({
+      where: { email: normalized },
+      create: {
+        email: normalized,
+        fullName: fullName?.trim() || null,
+        phoneNumber: phoneNumber?.trim() || null,
+        role: "LEAD_GENERATOR",
+        commissionRate:
+          commissionRate != null ? Math.max(0, Number(commissionRate)) : 0.1,
+        accountStatus: "INVITED",
+        notes: notes?.trim() || null,
+        isAuthorized: false,
+        invitedById: auth.session.userId,
+      },
+      update: {
+        fullName: fullName?.trim() || undefined,
+        phoneNumber: phoneNumber?.trim() || undefined,
+        commissionRate:
+          commissionRate != null ? Math.max(0, Number(commissionRate)) : undefined,
+        accountStatus: "INVITED",
+        notes: notes?.trim() || undefined,
       },
     });
 

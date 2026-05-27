@@ -76,6 +76,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  if (session.accountStatus === "SUSPENDED") {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Account suspended" }, { status: 403 });
+    }
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   if (session.mustChangePassword && pathname !== "/change-password") {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json(

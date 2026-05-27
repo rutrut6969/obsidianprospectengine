@@ -33,6 +33,11 @@ enum OutreachChannel {
   PHONE
 }
 
+enum CampaignType {
+  EMAIL
+  SMS
+}
+
 enum OutreachStatus {
   DRAFT
   APPROVED
@@ -84,6 +89,72 @@ enum ExportFormat {
   DOCX
 }
 
+enum AccountStatus {
+  ACTIVE
+  INVITED
+  SUSPENDED
+}
+
+enum LeadVisibility {
+  GLOBAL
+  PRIVATE
+}
+
+enum EmailDiscoveryStatus {
+  NOT_STARTED
+  FOUND
+  NOT_FOUND
+  FAILED
+}
+
+enum ContactMethodType {
+  EMAIL
+  PHONE
+  WEBSITE
+  FACEBOOK
+}
+
+enum ClientStatus {
+  PROSPECT
+  ACTIVE
+  OVERDUE
+  PAUSED
+  CANCELED
+  COMPLETED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+  OVERDUE
+  FAILED
+}
+
+enum CommissionStatus {
+  PENDING
+  APPROVED
+  PAID
+  VOIDED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PAID
+  OVERDUE
+  FAILED
+  CANCELED
+}
+
+enum ProjectStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELED
+}
+
 model BusinessLead {
   id            String         @id @default(cuid())
   name          String
@@ -101,6 +172,11 @@ model BusinessLead {
   notes         String?
   status        LeadStatus     @default(NEW)
   placeId       String?        @unique
+  ownerId       String?
+  visibility    LeadVisibility @default(GLOBAL)
+  primaryEmail  String?
+  emailDiscoveryStatus EmailDiscoveryStatus @default(NOT_STARTED)
+  emailConfidence Int?
   normalizedName    String?
   normalizedAddress String?
   normalizedPhone   String?
@@ -113,12 +189,20 @@ model BusinessLead {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
+  owner           User?          @relation("OwnedLeads", fields: [ownerId], references: [id], onDelete: SetNull)
   websiteAudits   WebsiteAudit[]
   outreachDrafts  OutreachDraft[]
   outreachLogs    OutreachLog[]
   campaignLeads   CampaignLead[]
   activities      LeadActivity[]
+  contactMethods  ContactMethod[]
+  clients         Client[]
+  invoices        Invoice[]
 
+  @@index([ownerId])
+  @@index([visibility])
+  @@index([primaryEmail])
+  @@index([emailDiscoveryStatus])
   @@index([deletedAt])
   @@index([isArchived])
   @@index([normalizedPhone])
@@ -127,6 +211,25 @@ model BusinessLead {
   @@index([category])
   @@index([city, state])
   @@index([leadScore])
+}
+
+model ContactMethod {
+  id             String            @id @default(cuid())
+  businessLeadId String
+  type           ContactMethodType
+  value          String
+  label          String?
+  confidence     Int?
+  sourceUrl      String?
+  isPrimary      Boolean           @default(false)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  businessLead BusinessLead @relation(fields: [businessLeadId], references: [id], onDelete: Cascade)
+
+  @@unique([businessLeadId, type, value])
+  @@index([type])
+  @@index([isPrimary])
 }
 
 model WebsiteAudit {
@@ -162,6 +265,7 @@ model WebsiteAudit {
 model OutreachDraft {
   id             String          @id @default(cuid())
   businessLeadId String
+  ownerId        String?
   templateId     String?
   subject        String?
   message        String
@@ -179,9 +283,11 @@ model OutreachDraft {
   updatedAt      DateTime        @updatedAt
 
   businessLead BusinessLead @relation(fields: [businessLeadId], references: [id], onDelete: Cascade)
+  owner        User?         @relation("OwnedOutreachDrafts", fields: [ownerId], references: [id], onDelete: SetNull)
   template     EmailTemplate? @relation(fields: [templateId], references: [id])
   logs         OutreachLog[]
 
+  @@index([ownerId])
   @@index([status])
   @@index([channel])
   @@index([updatedAt])
@@ -189,17 +295,22 @@ model OutreachDraft {
 
 model EmailTemplate {
   id          String       @id @default(cuid())
+  ownerId     String?
   name        String
   type        TemplateType @default(COLD_OUTREACH)
   subject     String
   html        String
   text        String
   isActive    Boolean      @default(true)
+  isSystem    Boolean      @default(false)
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
+  owner  User? @relation("OwnedEmailTemplates", fields: [ownerId], references: [id], onDelete: SetNull)
   drafts OutreachDraft[]
+  campaigns Campaign[]
 
+  @@index([ownerId])
   @@index([type])
   @@index([isActive])
 }
@@ -208,6 +319,7 @@ model OutreachLog {
   id                String          @id @default(cuid())
   outreachDraftId   String
   businessLeadId    String
+  userId            String?
   channel           OutreachChannel
   deliveryStatus    DeliveryStatus  @default(QUEUED)
   provider          String
@@ -220,14 +332,19 @@ model OutreachLog {
 
   outreachDraft OutreachDraft @relation(fields: [outreachDraftId], references: [id], onDelete: Cascade)
   businessLead   BusinessLead @relation(fields: [businessLeadId], references: [id], onDelete: Cascade)
+  user           User?        @relation("UserOutreachLogs", fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([userId])
   @@index([deliveryStatus])
   @@index([providerMessageId])
 }
 
 model Campaign {
   id               String         @id @default(cuid())
+  ownerId          String?
   name             String
+  type             CampaignType   @default(EMAIL)
+  templateId       String?
   businessCategory String?
   city             String?
   state            String?
@@ -242,10 +359,18 @@ model Campaign {
   sendWindowEnd    String?
   scheduledAt      DateTime?
   pausedAt         DateTime?
+  deletedAt        DateTime?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
-  leads CampaignLead[]
+  owner    User?          @relation("OwnedCampaigns", fields: [ownerId], references: [id], onDelete: SetNull)
+  template EmailTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  leads    CampaignLead[]
+
+  @@index([ownerId])
+  @@index([type])
+  @@index([status])
+  @@index([deletedAt])
 }
 
 model CampaignLead {
@@ -262,6 +387,7 @@ model CampaignLead {
 
 model SearchRun {
   id          String   @id @default(cuid())
+  userId      String?
   query       String
   city        String
   state       String
@@ -269,11 +395,16 @@ model SearchRun {
   maxResults  Int
   resultCount Int      @default(0)
   createdAt   DateTime @default(now())
+
+  user User? @relation("UserSearchRuns", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
 }
 
 model LeadActivity {
   id             String       @id @default(cuid())
   businessLeadId String
+  userId         String?
   type           ActivityType
   title          String
   body           String?
@@ -281,13 +412,16 @@ model LeadActivity {
   createdAt      DateTime     @default(now())
 
   businessLead BusinessLead @relation(fields: [businessLeadId], references: [id], onDelete: Cascade)
+  user         User?        @relation("UserLeadActivities", fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([userId])
   @@index([businessLeadId, createdAt])
   @@index([type])
 }
 
 model ExportLog {
   id          String       @id @default(cuid())
+  userId      String?
   format      ExportFormat
   filename    String
   filters     Json?
@@ -295,34 +429,60 @@ model ExportLog {
   rowCount    Int
   createdAt   DateTime     @default(now())
 
+  user User? @relation("UserExports", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
   @@index([format])
   @@index([createdAt])
 }
 
 enum UserRole {
   SUPER_ADMIN
+  LEAD_GENERATOR
   USER
 }
 
 model User {
   id                 String    @id @default(cuid())
+  fullName           String?
   email              String    @unique
+  phoneNumber        String?
   passwordHash       String?
   role               UserRole  @default(USER)
+  commissionRate     Float     @default(0.10)
+  accountStatus      AccountStatus @default(ACTIVE)
   isAuthorized       Boolean   @default(false)
   mustChangePassword Boolean   @default(false)
+  notes              String?
+  lastLoginAt        DateTime?
   invitedById        String?
   invitedBy          User?     @relation("UserInvites", fields: [invitedById], references: [id])
   invitees           User[]    @relation("UserInvites")
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  invitesSent Invite[] @relation("InviteCreator")
+  invitesSent      Invite[] @relation("InviteCreator")
+  ownedLeads       BusinessLead[] @relation("OwnedLeads")
+  campaigns        Campaign[] @relation("OwnedCampaigns")
+  outreachDrafts   OutreachDraft[] @relation("OwnedOutreachDrafts")
+  outreachLogs     OutreachLog[] @relation("UserOutreachLogs")
+  emailTemplates   EmailTemplate[] @relation("OwnedEmailTemplates")
+  searchRuns       SearchRun[] @relation("UserSearchRuns")
+  leadActivities   LeadActivity[] @relation("UserLeadActivities")
+  exportLogs       ExportLog[] @relation("UserExports")
+  clients          Client[] @relation("ClientOwner")
+  closedClients    Client[] @relation("ClientCloser")
+  commissions      Commission[] @relation("CommissionUser")
+  invoices         Invoice[] @relation("InvoiceOwner")
+  passwordResets   PasswordResetToken[]
 }
 
 model Invite {
   id          String    @id @default(cuid())
   email       String
+  role        UserRole  @default(LEAD_GENERATOR)
+  fullName    String?
+  phoneNumber String?
   token       String    @unique
   expiresAt   DateTime
   usedAt      DateTime?
@@ -331,4 +491,156 @@ model Invite {
   createdAt   DateTime  @default(now())
 
   @@index([email])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Client {
+  id                  String        @id @default(cuid())
+  businessLeadId      String?
+  ownerId             String?
+  closedById          String?
+  businessName        String
+  contactName         String?
+  contactEmail        String?
+  contactPhone        String?
+  websitePackage      String?
+  upfrontWebsitePrice Float         @default(0)
+  retainerAmount      Float         @default(0)
+  retainerStartDate   DateTime?
+  paymentStatus       PaymentStatus @default(UNPAID)
+  status              ClientStatus  @default(PROSPECT)
+  notes               String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  businessLead BusinessLead? @relation(fields: [businessLeadId], references: [id], onDelete: SetNull)
+  owner        User?         @relation("ClientOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  closedBy     User?         @relation("ClientCloser", fields: [closedById], references: [id], onDelete: SetNull)
+  commissions  Commission[]
+  invoices     Invoice[]
+  projects     Project[]
+  retainers    RetainerPayment[]
+
+  @@index([businessLeadId])
+  @@index([ownerId])
+  @@index([closedById])
+  @@index([status])
+  @@index([paymentStatus])
+}
+
+model Commission {
+  id               String           @id @default(cuid())
+  userId           String
+  clientId         String?
+  invoiceId        String?
+  saleAmount       Float
+  commissionRate   Float            @default(0.10)
+  commissionAmount Float
+  status           CommissionStatus @default(PENDING)
+  payoutDate       DateTime?
+  notes            String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  user    User     @relation("CommissionUser", fields: [userId], references: [id], onDelete: Cascade)
+  client  Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([clientId])
+  @@index([status])
+}
+
+model Project {
+  id          String        @id @default(cuid())
+  clientId    String?
+  name        String
+  description String?
+  status      ProjectStatus @default(DRAFT)
+  pageCount   Int?
+  ecommerce   Boolean       @default(false)
+  customFeatures String[]   @default([])
+  integrations   String[]   @default([])
+  bookingSystem  Boolean    @default(false)
+  userAccounts   Boolean    @default(false)
+  urgency        String?
+  complexityScore Int?
+  suggestedUpfrontCost Float?
+  suggestedRetainer Float?
+  pricingExplanation String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  client   Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  invoices Invoice[]
+
+  @@index([clientId])
+  @@index([status])
+}
+
+model Invoice {
+  id              String        @id @default(cuid())
+  businessLeadId  String?
+  clientId        String?
+  projectId       String?
+  ownerId         String?
+  title           String
+  description     String?
+  amountDue       Float
+  retainerAmount  Float?
+  status          InvoiceStatus @default(DRAFT)
+  dueDate         DateTime?
+  sentAt          DateTime?
+  viewedAt        DateTime?
+  paidAt          DateTime?
+  squareCustomerId String?
+  squareInvoiceId  String?
+  invoiceUrl       String?
+  notes            String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  businessLead BusinessLead? @relation(fields: [businessLeadId], references: [id], onDelete: SetNull)
+  client       Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  project      Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  owner        User?         @relation("InvoiceOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  commissions  Commission[]
+
+  @@index([businessLeadId])
+  @@index([clientId])
+  @@index([projectId])
+  @@index([ownerId])
+  @@index([status])
+  @@index([squareInvoiceId])
+}
+
+model RetainerPayment {
+  id        String        @id @default(cuid())
+  clientId  String
+  amount    Float
+  dueDate   DateTime
+  paidDate  DateTime?
+  status    PaymentStatus @default(UNPAID)
+  notes     String?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([status])
+  @@index([dueDate])
 }

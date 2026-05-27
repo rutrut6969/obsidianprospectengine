@@ -14,6 +14,10 @@ import {
   UserPlus,
   LogOut,
   ClipboardCheck,
+  BriefcaseBusiness,
+  Receipt,
+  BadgeDollarSign,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -24,6 +28,9 @@ const nav = [
   { href: "/results", label: "Lead Results", icon: List },
   { href: "/leads", label: "Saved Leads", icon: Users },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone },
+  { href: "/clients", label: "Clients", icon: BriefcaseBusiness },
+  { href: "/invoices", label: "Invoices", icon: Receipt },
+  { href: "/commissions", label: "Commissions", icon: BadgeDollarSign },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -104,6 +111,18 @@ export function Sidebar() {
             >
               <ClipboardCheck className="h-4 w-4 shrink-0" />
               Approvals
+            </Link>
+            <Link
+              href="/admin/templates"
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                pathname.startsWith("/admin/templates")
+                  ? "bg-purple-600/20 text-purple-300 border border-purple-500/30"
+                  : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+              )}
+            >
+              <FileText className="h-4 w-4 shrink-0" />
+              Templates
             </Link>
             <Link
               href="/admin/invites"

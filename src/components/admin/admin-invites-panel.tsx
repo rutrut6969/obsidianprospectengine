@@ -6,7 +6,7 @@ import { Input, Label } from "@/components/ui/input";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
-import { Mail, UserPlus } from "lucide-react";
+import { Mail, RotateCcw, UserPlus } from "lucide-react";
 
 interface InviteRow {
   id: string;
@@ -18,14 +18,31 @@ interface InviteRow {
 
 interface UserRow {
   id: string;
+  fullName: string | null;
   email: string;
+  phoneNumber: string | null;
   role: string;
+  commissionRate: number;
+  accountStatus: string;
+  notes: string | null;
   isAuthorized: boolean;
+  lastLoginAt: string | null;
   createdAt: string;
+  _count?: {
+    ownedLeads: number;
+    campaigns: number;
+    outreachLogs: number;
+    closedClients: number;
+    commissions: number;
+  };
+  commissions?: Array<{ commissionAmount: number; status: string }>;
 }
 
 export function AdminInvitesPanel() {
   const [email, setEmail] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [commissionRate, setCommissionRate] = useState("0.1");
   const [invites, setInvites] = useState<InviteRow[]>([]);
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,18 +74,51 @@ export function AdminInvitesPanel() {
       const res = await fetch("/api/admin/invites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({
+          email,
+          fullName,
+          phoneNumber,
+          commissionRate: Number(commissionRate),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Invite failed");
       setSuccess(`Invite sent to ${email}`);
       setEmail("");
+      setFullName("");
+      setPhoneNumber("");
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Invite failed");
     } finally {
       setSending(false);
     }
+  }
+
+  async function updateUser(user: UserRow, patch: Partial<UserRow>) {
+    const res = await fetch(`/api/admin/users/${user.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const data = await res.json();
+      alert(data.error ?? "User update failed");
+      return;
+    }
+    await load();
+  }
+
+  async function resetPassword(user: UserRow) {
+    const res = await fetch(`/api/admin/users/${user.id}/password-reset`, {
+      method: "POST",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error ?? "Password reset failed");
+      return;
+    }
+    window.prompt("Password reset link", data.resetUrl);
   }
 
   return (
@@ -79,7 +129,15 @@ export function AdminInvitesPanel() {
           description="They'll receive an email via Resend to authorize and set a password"
         />
         <CardBody>
-          <form onSubmit={sendInvite} className="flex flex-wrap gap-3 items-end">
+          <form onSubmit={sendInvite} className="grid gap-3 md:grid-cols-5">
+            <div>
+              <Label htmlFor="invite-name">Full name</Label>
+              <Input
+                id="invite-name"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+              />
+            </div>
             <div className="flex-1 min-w-[220px]">
               <Label htmlFor="invite-email">Email address</Label>
               <Input
@@ -89,6 +147,25 @@ export function AdminInvitesPanel() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+              />
+            </div>
+            <div>
+              <Label htmlFor="invite-phone">Phone</Label>
+              <Input
+                id="invite-phone"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+              />
+            </div>
+            <div>
+              <Label htmlFor="invite-commission">Commission</Label>
+              <Input
+                id="invite-commission"
+                type="number"
+                step="0.01"
+                min="0"
+                value={commissionRate}
+                onChange={(e) => setCommissionRate(e.target.value)}
               />
             </div>
             <Button type="submit" loading={sending}>
@@ -117,24 +194,58 @@ export function AdminInvitesPanel() {
                   <th className="px-6 py-3">Email</th>
                   <th className="px-6 py-3">Role</th>
                   <th className="px-6 py-3">Status</th>
-                  <th className="px-6 py-3">Added</th>
+                  <th className="px-6 py-3">Stats</th>
+                  <th className="px-6 py-3">Commission</th>
+                  <th className="px-6 py-3">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {users.map((u) => (
                   <tr key={u.id} className="border-b border-slate-800/50">
-                    <td className="px-6 py-3 text-slate-200">{u.email}</td>
+                    <td className="px-6 py-3 text-slate-200">
+                      <p className="font-medium">{u.fullName ?? u.email}</p>
+                      <p className="text-xs text-slate-500">{u.email}</p>
+                    </td>
                     <td className="px-6 py-3">
                       <Badge variant={u.role === "SUPER_ADMIN" ? "purple" : "slate"}>
                         {u.role.replace("_", " ")}
                       </Badge>
                     </td>
                     <td className="px-6 py-3">
-                      <Badge variant={u.isAuthorized ? "green" : "amber"}>
-                        {u.isAuthorized ? "Authorized" : "Pending"}
+                      <Badge variant={u.accountStatus === "SUSPENDED" ? "red" : u.isAuthorized ? "green" : "amber"}>
+                        {u.accountStatus}
                       </Badge>
                     </td>
-                    <td className="px-6 py-3 text-slate-500">{formatDate(u.createdAt)}</td>
+                    <td className="px-6 py-3 text-slate-500">
+                      {u._count?.ownedLeads ?? 0} leads | {u._count?.campaigns ?? 0} campaigns | {u._count?.outreachLogs ?? 0} sent | {u._count?.closedClients ?? 0} closed | $
+                      {(u.commissions ?? [])
+                        .filter((commission) => commission.status !== "VOIDED")
+                        .reduce((sum, commission) => sum + commission.commissionAmount, 0)
+                        .toLocaleString()} earned
+                    </td>
+                    <td className="px-6 py-3 text-slate-300">
+                      {(u.commissionRate * 100).toFixed(0)}%
+                    </td>
+                    <td className="px-6 py-3">
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          size="sm"
+                          variant={u.accountStatus === "SUSPENDED" ? "success" : "danger"}
+                          onClick={() =>
+                            updateUser(u, {
+                              accountStatus:
+                                u.accountStatus === "SUSPENDED" ? "ACTIVE" : "SUSPENDED",
+                            } as Partial<UserRow>)
+                          }
+                        >
+                          {u.accountStatus === "SUSPENDED" ? "Reactivate" : "Suspend"}
+                        </Button>
+                        <Button size="sm" variant="secondary" onClick={() => resetPassword(u)}>
+                          <RotateCcw className="h-3.5 w-3.5" />
+                          Reset
+                        </Button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -9,6 +9,7 @@ import {
   Shield,
   Globe,
 } from "lucide-react";
+import { ProfileSettings } from "@/components/settings/profile-settings";
 
 const envVars = [
   {
@@ -72,6 +73,8 @@ export default function SettingsPage() {
           Environment variables and API setup for Obsidian Prospect Engine.
         </p>
       </div>
+
+      <ProfileSettings />
 
       <Card>
         <CardHeader

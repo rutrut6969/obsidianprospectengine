@@ -2,13 +2,14 @@ import { SignJWT } from "jose/jwt/sign";
 import { jwtVerify } from "jose/jwt/verify";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
-import { UserRole } from "@prisma/client";
+import { AccountStatus, UserRole } from "@prisma/client";
 import { SESSION_COOKIE, SESSION_SECRET_MIN_LENGTH } from "./constants";
 
 export interface SessionPayload {
   userId: string;
   email: string;
   role: UserRole;
+  accountStatus?: AccountStatus;
   mustChangePassword: boolean;
 }
 
@@ -36,6 +37,7 @@ async function verifyToken(token: string): Promise<SessionPayload | null> {
       userId: payload.userId,
       email: payload.email,
       role: payload.role as UserRole,
+      accountStatus: (payload.accountStatus as AccountStatus | undefined) ?? "ACTIVE",
       mustChangePassword: Boolean(payload.mustChangePassword),
     };
   } catch {
@@ -50,6 +52,7 @@ export async function createSession(
     userId: payload.userId,
     email: payload.email,
     role: payload.role,
+    accountStatus: payload.accountStatus ?? "ACTIVE",
     mustChangePassword: payload.mustChangePassword,
   })
     .setProtectedHeader({ alg: "HS256" })

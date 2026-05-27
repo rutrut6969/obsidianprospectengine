@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { LeadStatus, Prisma, WebsiteStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from "@/lib/auth/guards";
+import { leadVisibilityWhere } from "@/lib/auth/access";
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireSession();
+    if ("error" in auth) return auth.error;
+
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status") as LeadStatus | null;
     const minScore = searchParams.get("minScore");
@@ -16,7 +21,9 @@ export async function GET(request: NextRequest) {
     const direction = searchParams.get("direction") === "asc" ? "asc" : "desc";
     const q = searchParams.get("q");
 
-    const where: Prisma.BusinessLeadWhereInput = {};
+    const where: Prisma.BusinessLeadWhereInput = {
+      ...leadVisibilityWhere(auth.session),
+    };
     if (!includeDeleted) where.deletedAt = null;
     if (status) where.status = status;
     if (websiteStatus) where.websiteStatus = websiteStatus as WebsiteStatus;

@@ -3,9 +3,13 @@ import { WebsiteStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { milesToMeters, searchPlaces } from "@/lib/google-places";
 import { auditWebsite } from "@/lib/website-audit";
+import { requireSession } from "@/lib/auth/guards";
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireSession();
+    if ("error" in auth) return auth.error;
+
     const body = await request.json();
     const {
       category,
@@ -43,6 +47,7 @@ export async function POST(request: NextRequest) {
 
     const searchRun = await prisma.searchRun.create({
       data: {
+        userId: auth.session.userId,
         query: category.trim(),
         city: city.trim(),
         state: state.trim().toUpperCase(),

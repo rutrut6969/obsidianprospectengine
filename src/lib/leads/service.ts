@@ -1,5 +1,7 @@
 import { Prisma, LeadStatus, WebsiteStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { SessionPayload } from "@/lib/auth/session";
+import { defaultLeadOwnership, isSessionSuperAdmin, leadVisibilityWhere } from "@/lib/auth/access";
 import {
   buildDuplicateFingerprint,
   normalizePhone,
@@ -25,7 +27,10 @@ export interface LeadInput {
   status?: LeadStatus | string | null;
 }
 
-export function buildLeadData(input: LeadInput): Prisma.BusinessLeadUncheckedCreateInput {
+export function buildLeadData(
+  input: LeadInput,
+  session?: SessionPayload
+): Prisma.BusinessLeadUncheckedCreateInput {
   const name = input.name.trim();
   const normalizedName = normalizeText(name);
   const normalizedAddress = normalizeText(input.address);
@@ -54,6 +59,7 @@ export function buildLeadData(input: LeadInput): Prisma.BusinessLeadUncheckedCre
     notes: input.notes ?? null,
     status: (input.status as LeadStatus) ?? "SAVED",
     placeId: input.placeId?.trim() || null,
+    ...(session ? defaultLeadOwnership(session) : {}),
     normalizedName,
     normalizedAddress,
     normalizedPhone,
@@ -86,11 +92,28 @@ export async function findDuplicateLead(input: LeadInput) {
   });
 }
 
-export async function saveLeadWithDuplicateProtection(input: LeadInput) {
-  const data = buildLeadData(input);
-  const duplicate = await findDuplicateLead(input);
+export async function saveLeadWithDuplicateProtection(
+  input: LeadInput,
+  session?: SessionPayload
+) {
+  const data = buildLeadData(input, session);
+  const OR = duplicateConditions(data);
+  const duplicate =
+    OR.length === 0
+      ? null
+      : await prisma.businessLead.findFirst({
+          where: {
+            OR,
+            ...(session ? leadVisibilityWhere(session) : {}),
+          },
+          orderBy: { updatedAt: "desc" },
+        });
 
   if (duplicate) {
+    if (session && !isSessionSuperAdmin(session) && duplicate.ownerId !== session.userId) {
+      return { lead: duplicate, duplicate: true, created: false, shared: true };
+    }
+
     const lead = await prisma.businessLead.update({
       where: { id: duplicate.id },
       data: {
@@ -105,9 +128,10 @@ export async function saveLeadWithDuplicateProtection(input: LeadInput) {
 
   const lead = await prisma.businessLead.create({ data });
   await prisma.leadActivity.create({
-    data: {
-      businessLeadId: lead.id,
-      type: "LEAD_UPDATED",
+      data: {
+        businessLeadId: lead.id,
+        userId: session?.userId,
+        type: "LEAD_UPDATED",
       title: "Lead saved",
       body: "Lead was added to the CRM.",
     },
@@ -116,7 +140,7 @@ export async function saveLeadWithDuplicateProtection(input: LeadInput) {
   return { lead, duplicate: false, created: true };
 }
 
-export async function softDeleteLead(id: string) {
+export async function softDeleteLead(id: string, session?: SessionPayload) {
   return prisma.$transaction(async (tx) => {
     const lead = await tx.businessLead.update({
       where: { id },
@@ -130,6 +154,7 @@ export async function softDeleteLead(id: string) {
     await tx.leadActivity.create({
       data: {
         businessLeadId: id,
+        userId: session?.userId,
         type: "LEAD_DELETED",
         title: "Lead deleted",
         body: "Lead was soft-deleted and can be restored later.",
@@ -140,7 +165,7 @@ export async function softDeleteLead(id: string) {
   });
 }
 
-export async function restoreLead(id: string) {
+export async function restoreLead(id: string, session?: SessionPayload) {
   return prisma.$transaction(async (tx) => {
     const lead = await tx.businessLead.update({
       where: { id },
@@ -154,6 +179,7 @@ export async function restoreLead(id: string) {
     await tx.leadActivity.create({
       data: {
         businessLeadId: id,
+        userId: session?.userId,
         type: "LEAD_RESTORED",
         title: "Lead restored",
       },

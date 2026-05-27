@@ -3,11 +3,16 @@ import { OutreachStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { sendApprovedEmailDraft } from "@/lib/outreach/resend-send";
 import { sendApprovedSmsDraft } from "@/lib/outreach/twilio";
+import { requireSession } from "@/lib/auth/guards";
+import { isSessionSuperAdmin } from "@/lib/auth/access";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
+    const auth = await requireSession();
+    if ("error" in auth) return auth.error;
+
     const { id } = await context.params;
     const body = (await request.json()) as {
       subject?: string | null;
@@ -19,6 +24,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     if (body.action === "send") {
       const draft = await prisma.outreachDraft.findUnique({ where: { id } });
       if (!draft) return NextResponse.json({ error: "Draft not found" }, { status: 404 });
+      if (!isSessionSuperAdmin(auth.session) && draft.ownerId !== auth.session.userId) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
       const result =
         draft.channel === "SMS"
           ? await sendApprovedSmsDraft(id)
@@ -32,6 +40,14 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         );
       }
       return NextResponse.json({ result });
+    }
+
+    const existing = await prisma.outreachDraft.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "Draft not found" }, { status: 404 });
+    }
+    if (!isSessionSuperAdmin(auth.session) && existing.ownerId !== auth.session.userId) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const now = new Date();
@@ -58,6 +74,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         await tx.leadActivity.create({
           data: {
             businessLeadId: updated.businessLeadId,
+            userId: auth.session.userId,
             type: status === "APPROVED" ? "OUTREACH_APPROVED" : "OUTREACH_REJECTED",
             title:
               status === "APPROVED"

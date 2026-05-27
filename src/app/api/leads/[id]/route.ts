@@ -2,14 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { LeadStatus, WebsiteStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { restoreLead, softDeleteLead } from "@/lib/leads/service";
+import { requireSession } from "@/lib/auth/guards";
+import { isSessionSuperAdmin, leadVisibilityWhere } from "@/lib/auth/access";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function GET(_request: NextRequest, context: RouteContext) {
   try {
+    const auth = await requireSession();
+    if ("error" in auth) return auth.error;
     const { id } = await context.params;
-    const lead = await prisma.businessLead.findUnique({
-      where: { id },
+    const lead = await prisma.businessLead.findFirst({
+      where: { id, ...leadVisibilityWhere(auth.session) },
       include: {
         websiteAudits: { orderBy: { createdAt: "desc" } },
         outreachDrafts: {
@@ -17,6 +21,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           include: { logs: { orderBy: { createdAt: "desc" }, take: 3 } },
         },
         activities: { orderBy: { createdAt: "desc" }, take: 25 },
+        contactMethods: { orderBy: [{ isPrimary: "desc" }, { confidence: "desc" }] },
       },
     });
 
@@ -36,7 +41,22 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
+    const auth = await requireSession();
+    if ("error" in auth) return auth.error;
     const { id } = await context.params;
+    const existing = await prisma.businessLead.findFirst({
+      where: { id, ...leadVisibilityWhere(auth.session) },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+    }
+    if (!isSessionSuperAdmin(auth.session) && existing.ownerId !== auth.session.userId) {
+      return NextResponse.json(
+        { error: "Only the lead owner can update this lead." },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const { status, notes, leadScore, websiteStatus, websiteUrl } = body as {
       status?: LeadStatus;
@@ -48,7 +68,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     };
 
     if (body.restore === true) {
-      const lead = await restoreLead(id);
+      const lead = await restoreLead(id, auth.session);
       return NextResponse.json({ lead });
     }
 
@@ -67,6 +87,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       await tx.leadActivity.create({
         data: {
           businessLeadId: id,
+          userId: auth.session.userId,
           type: status ? "STATUS_CHANGE" : "LEAD_UPDATED",
           title: status ? `Status changed to ${status.replace(/_/g, " ")}` : "Lead updated",
           body: notes !== undefined ? "Notes were updated." : null,
@@ -88,8 +109,22 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
 export async function DELETE(_request: NextRequest, context: RouteContext) {
   try {
+    const auth = await requireSession();
+    if ("error" in auth) return auth.error;
     const { id } = await context.params;
-    const lead = await softDeleteLead(id);
+    const existing = await prisma.businessLead.findFirst({
+      where: { id, ...leadVisibilityWhere(auth.session) },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+    }
+    if (!isSessionSuperAdmin(auth.session) && existing.ownerId !== auth.session.userId) {
+      return NextResponse.json(
+        { error: "Only the lead owner can delete this lead." },
+        { status: 403 }
+      );
+    }
+    const lead = await softDeleteLead(id, auth.session);
     return NextResponse.json({ lead });
   } catch (error) {
     console.error("[leads DELETE]", error);

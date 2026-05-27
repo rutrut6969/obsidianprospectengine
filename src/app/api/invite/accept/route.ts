@@ -51,13 +51,17 @@ export async function POST(request: NextRequest) {
         where: { email },
         create: {
           email,
-          role: "USER",
+          role: invite.role === "SUPER_ADMIN" ? "LEAD_GENERATOR" : invite.role,
+          fullName: invite.fullName,
+          phoneNumber: invite.phoneNumber,
+          accountStatus: "INVITED",
           isAuthorized: true,
           mustChangePassword: false,
           invitedById: invite.createdById,
         },
         update: {
           isAuthorized: true,
+          accountStatus: "INVITED",
           invitedById: invite.createdById,
         },
       });

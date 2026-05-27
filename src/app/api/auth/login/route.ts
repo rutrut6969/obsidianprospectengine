@@ -28,6 +28,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (user.accountStatus === "SUSPENDED") {
+      return NextResponse.json(
+        { error: "This account is suspended." },
+        { status: 403 }
+      );
+    }
+
     const valid = await verifyPassword(password, user.passwordHash);
     if (!valid) {
       return NextResponse.json(
@@ -36,17 +43,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date(), accountStatus: "ACTIVE" },
+    });
+
     await createSession({
       userId: user.id,
       email: user.email,
-      role: user.role,
+      role: updated.role,
+      accountStatus: updated.accountStatus,
       mustChangePassword: user.mustChangePassword,
     });
 
     return NextResponse.json({
       ok: true,
       mustChangePassword: user.mustChangePassword,
-      role: user.role,
+      role: updated.role,
     });
   } catch (error) {
     console.error("[auth/login]", error);

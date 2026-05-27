@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ExportFormat } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { requireSession } from "@/lib/auth/guards";
 import {
   exportContentType,
   getExportLeads,
@@ -13,6 +14,9 @@ import {
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireSession();
+    if ("error" in auth) return auth.error;
+
     const { searchParams } = new URL(request.url);
     const format = (searchParams.get("format") ?? "csv").toUpperCase() as ExportFormat;
     if (!["CSV", "XLSX", "PDF", "DOCX"].includes(format)) {
@@ -27,7 +31,7 @@ export async function GET(request: NextRequest) {
       category: searchParams.get("category"),
       websiteStatus: searchParams.get("websiteStatus"),
     };
-    const leads = await getExportLeads(filters);
+    const leads = await getExportLeads(filters, auth.session);
     const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
     const filename = `obsidian-leads-${timestamp}.${format.toLowerCase()}`;
 
@@ -43,6 +47,7 @@ export async function GET(request: NextRequest) {
     await prisma.exportLog.create({
       data: {
         format,
+        userId: auth.session.userId,
         filename,
         filters,
         columnNames: columns,

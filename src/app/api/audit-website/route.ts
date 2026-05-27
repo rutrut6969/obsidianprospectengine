@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auditWebsite } from "@/lib/website-audit";
+import { requireSession } from "@/lib/auth/guards";
+import { isSessionSuperAdmin, leadVisibilityWhere } from "@/lib/auth/access";
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireSession();
+    if ("error" in auth) return auth.error;
+
     const body = await request.json();
     const { websiteUrl, businessLeadId } = body as {
       websiteUrl?: string;
@@ -14,6 +19,19 @@ export async function POST(request: NextRequest) {
 
     let savedAudit = null;
     if (businessLeadId) {
+      const lead = await prisma.businessLead.findFirst({
+        where: { id: businessLeadId, ...leadVisibilityWhere(auth.session) },
+      });
+      if (!lead) {
+        return NextResponse.json({ error: "Lead not found" }, { status: 404 });
+      }
+      if (!isSessionSuperAdmin(auth.session) && lead.ownerId !== auth.session.userId) {
+        return NextResponse.json(
+          { error: "Only the lead owner can update this audit." },
+          { status: 403 }
+        );
+      }
+
       savedAudit = await prisma.$transaction(async (tx) => {
         const audit = await tx.websiteAudit.create({
           data: {

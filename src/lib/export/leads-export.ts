@@ -12,6 +12,8 @@ import {
 } from "docx";
 import { ExportFormat, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { SessionPayload } from "@/lib/auth/session";
+import { leadVisibilityWhere } from "@/lib/auth/access";
 
 export const EXPORT_COLUMNS = [
   "name",
@@ -64,8 +66,11 @@ export async function getExportLeads(filters: {
   minScore?: string | null;
   category?: string | null;
   websiteStatus?: string | null;
-}) {
-  const where: Prisma.BusinessLeadWhereInput = { deletedAt: null };
+}, session?: SessionPayload) {
+  const where: Prisma.BusinessLeadWhereInput = {
+    deletedAt: null,
+    ...(session ? leadVisibilityWhere(session) : {}),
+  };
   if (filters.status) where.status = filters.status as never;
   if (filters.category) where.category = { equals: filters.category, mode: "insensitive" };
   if (filters.websiteStatus) where.websiteStatus = filters.websiteStatus as never;

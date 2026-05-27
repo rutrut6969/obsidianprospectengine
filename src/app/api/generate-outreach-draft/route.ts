@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { OutreachChannel, Prisma, WebsiteStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { generateOutreachDraft, selectChannelMessage } from "@/lib/outreach";
+import { requireSession } from "@/lib/auth/guards";
+import { leadVisibilityWhere } from "@/lib/auth/access";
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireSession();
+    if ("error" in auth) return auth.error;
+
     const body = await request.json();
     const {
       businessLeadId,
@@ -35,7 +40,13 @@ export async function POST(request: NextRequest) {
         where: { id: businessLeadId },
         include: { websiteAudits: { orderBy: { createdAt: "desc" }, take: 1 } },
       });
-      if (!lead) {
+      const visibleLead = lead
+        ? await prisma.businessLead.findFirst({
+            where: { id: businessLeadId, ...leadVisibilityWhere(auth.session) },
+            select: { id: true },
+          })
+        : null;
+      if (!lead || !visibleLead) {
         return NextResponse.json({ error: "Lead not found" }, { status: 404 });
       }
       leadContext = lead;
@@ -72,6 +83,7 @@ export async function POST(request: NextRequest) {
         const created = await tx.outreachDraft.create({
           data: {
             businessLeadId,
+            ownerId: auth.session.userId,
             subject: generated.subject,
             message,
             channel,
@@ -85,6 +97,7 @@ export async function POST(request: NextRequest) {
         await tx.leadActivity.create({
           data: {
             businessLeadId,
+            userId: auth.session.userId,
             type: "OUTREACH_GENERATED",
             title: `${channel} outreach draft generated`,
             body:

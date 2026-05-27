@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { saveLeadWithDuplicateProtection } from "@/lib/leads/service";
+import { requireSession } from "@/lib/auth/guards";
 
 export async function POST(request: NextRequest) {
   try {
+    const auth = await requireSession();
+    if ("error" in auth) return auth.error;
+
     const body = await request.json();
     const {
       placeId,
@@ -44,7 +48,7 @@ export async function POST(request: NextRequest) {
       leadScore,
       notes,
       status,
-    });
+    }, auth.session);
 
     if (audit) {
       await prisma.websiteAudit.create({

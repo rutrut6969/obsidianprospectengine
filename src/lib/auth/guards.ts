@@ -30,3 +30,7 @@ export async function requireSuperAdmin(): Promise<
 export function isSuperAdmin(role: UserRole): boolean {
   return role === "SUPER_ADMIN";
 }
+
+export function isLeadGenerator(role: UserRole): boolean {
+  return role === "LEAD_GENERATOR" || role === "USER";
+}
