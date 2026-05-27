@@ -209,8 +209,8 @@ export function LeadDetailClient({ id }: { id: string }) {
       </Link>
 
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-slate-100">{lead.name}</h1>
+        <div className="min-w-0">
+          <h1 className="break-words text-2xl font-bold text-slate-100 sm:text-3xl">{lead.name}</h1>
           <div className="mt-2 flex flex-wrap gap-2">
             {lead.category && <Badge variant="purple">{lead.category}</Badge>}
             <LeadScoreBadge score={lead.leadScore} />
@@ -218,11 +218,11 @@ export function LeadDetailClient({ id }: { id: string }) {
             <LeadStatusBadge status={lead.status} />
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-2 lg:flex lg:flex-wrap">
           <Select
             value={draftChannel}
             onChange={(e) => setDraftChannel(e.target.value)}
-            className="w-36"
+            className="w-full sm:w-36"
             aria-label="Outreach channel"
           >
             <option value="EMAIL">Email</option>

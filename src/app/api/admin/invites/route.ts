@@ -8,7 +8,7 @@ import {
   INVITE_EXPIRY_DAYS,
   SUPER_ADMIN_EMAIL,
 } from "@/lib/auth/constants";
-import { sendInviteEmail } from "@/lib/email/resend";
+import { sendLeadGeneratorInviteEmail } from "@/lib/email/resend";
 
 export async function GET() {
   const auth = await requireSuperAdmin();
@@ -136,15 +136,18 @@ export async function POST(request: NextRequest) {
 
     const inviteUrl = `${getAppUrl()}/invite/${token}`;
 
-    try {
-      await sendInviteEmail({
+    const emailResult = await sendLeadGeneratorInviteEmail({
+      to: normalized,
+      fullName: fullName?.trim() || null,
+      inviteUrl,
+    });
+
+    if (!emailResult.sent) {
+      console.error("[admin/invites] Invite created but email failed", {
+        inviteId: invite.id,
         to: normalized,
-        inviteUrl,
-        invitedByEmail: auth.session.email,
+        error: emailResult.error,
       });
-    } catch (emailError) {
-      await prisma.invite.delete({ where: { id: invite.id } });
-      throw emailError;
     }
 
     return NextResponse.json({
@@ -154,6 +157,9 @@ export async function POST(request: NextRequest) {
         expiresAt: invite.expiresAt,
         inviteUrl,
       },
+      emailSent: emailResult.sent,
+      emailError: emailResult.error,
+      resendMessageId: emailResult.messageId,
     });
   } catch (error) {
     console.error("[admin/invites]", error);

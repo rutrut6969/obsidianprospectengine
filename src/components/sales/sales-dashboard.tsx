@@ -120,7 +120,7 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
                 <Input id="retainerAmount" type="number" value={retainerAmount} onChange={(e) => setRetainerAmount(e.target.value)} />
               </div>
               <div className="flex items-end">
-                <Button type="submit">Create Client</Button>
+                <Button type="submit" className="w-full md:w-auto">Create Client</Button>
               </div>
             </form>
           </CardBody>
@@ -141,7 +141,7 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
                 <Input id="invoiceAmount" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} required />
               </div>
               <div className="flex items-end">
-                <Button type="submit">Create Draft</Button>
+                <Button type="submit" className="w-full md:w-auto">Create Draft</Button>
               </div>
             </form>
           </CardBody>
@@ -156,7 +156,63 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
           ) : rows.length === 0 ? (
             <p className="p-6 text-sm text-slate-500">No records yet.</p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            <div className="space-y-3 p-4 md:hidden">
+              {rows.map((row) => {
+                const name =
+                  "businessName" in row
+                    ? row.businessName
+                    : "title" in row
+                      ? row.title
+                      : row.client?.businessName ?? "Commission";
+                const amount =
+                  "amountDue" in row
+                    ? row.amountDue
+                    : "commissionAmount" in row
+                      ? row.commissionAmount
+                      : row.upfrontWebsitePrice;
+                const owner =
+                  "owner" in row
+                    ? row.owner?.fullName ?? row.owner?.email ?? "-"
+                    : "user" in row
+                      ? row.user.fullName ?? row.user.email
+                      : "-";
+                return (
+                  <div key={row.id} className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium text-slate-200">{name}</p>
+                        <p className="mt-1 text-xs text-slate-500">Owner: {owner}</p>
+                      </div>
+                      {"retainerPaymentStatus" in row ? (
+                        <PaymentBadge status={row.retainerPaymentStatus} />
+                      ) : (
+                        <Badge variant="slate">
+                          {String("paymentStatus" in row ? row.paymentStatus : row.status)}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                      <p><span className="text-slate-500">Amount:</span> ${amount.toLocaleString()}</p>
+                      {"retainerPaymentStatus" in row && (
+                        <>
+                          <p><span className="text-slate-500">Retainer:</span> ${row.retainerAmount.toLocaleString()} / mo</p>
+                          <p className="text-xs text-slate-500">
+                            Last: {row.lastPaymentDate ? new Date(row.lastPaymentDate).toLocaleDateString() : "-"} | Next: {row.nextPaymentDate ? new Date(row.nextPaymentDate).toLocaleDateString() : "-"}
+                          </p>
+                        </>
+                      )}
+                      {"invoiceUrl" in row && row.invoiceUrl && (
+                        <a href={row.invoiceUrl} target="_blank" rel="noopener noreferrer" className="text-purple-300 hover:text-purple-200">
+                          View invoice
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-800 text-left text-slate-400">
@@ -221,6 +277,7 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </CardBody>
       </Card>

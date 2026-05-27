@@ -94,6 +94,26 @@ export function TemplatesDashboard() {
       <Card>
         <CardHeader title="Templates" />
         <CardBody className="p-0">
+          <div className="space-y-3 p-4 md:hidden">
+            {templates.map((template) => (
+              <div key={template.id} className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium text-slate-200">{template.name}</p>
+                    <p className="mt-1 text-sm text-slate-400">{template.subject}</p>
+                  </div>
+                  <Badge variant={template.isActive ? "green" : "slate"}>
+                    {template.isActive ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Badge variant="purple">{template.type}</Badge>
+                  {template.isSystem && <Badge variant="slate">System</Badge>}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-800 text-left text-slate-400">
@@ -118,6 +138,7 @@ export function TemplatesDashboard() {
               ))}
             </tbody>
           </table>
+          </div>
         </CardBody>
       </Card>
     </div>

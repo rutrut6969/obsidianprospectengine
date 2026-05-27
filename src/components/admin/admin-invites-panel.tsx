@@ -83,7 +83,12 @@ export function AdminInvitesPanel() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Invite failed");
-      setSuccess(`Invite sent to ${email}`);
+      if (data.emailSent) {
+        setSuccess(`Invite sent to ${email}`);
+      } else {
+        setSuccess(`Invite created for ${email}, but the email was not sent. Setup link: ${data.invite?.inviteUrl ?? "unavailable"}`);
+        setError(data.emailError ?? "Resend did not send the invite email.");
+      }
       setEmail("");
       setFullName("");
       setPhoneNumber("");
@@ -168,16 +173,16 @@ export function AdminInvitesPanel() {
                 onChange={(e) => setCommissionRate(e.target.value)}
               />
             </div>
-            <Button type="submit" loading={sending}>
+            <Button type="submit" loading={sending} className="w-full self-end md:w-auto">
               <UserPlus className="h-4 w-4" />
               Send invite
             </Button>
           </form>
           {error && (
-            <p className="mt-3 text-sm text-red-300">{error}</p>
+            <p className="mt-3 break-words text-sm text-red-300">{error}</p>
           )}
           {success && (
-            <p className="mt-3 text-sm text-emerald-400">{success}</p>
+            <p className="mt-3 break-words text-sm text-emerald-400">{success}</p>
           )}
         </CardBody>
       </Card>
@@ -188,6 +193,54 @@ export function AdminInvitesPanel() {
           {loading ? (
             <p className="p-6 text-slate-500 text-sm">Loading…</p>
           ) : (
+            <>
+            <div className="space-y-3 p-4 md:hidden">
+              {users.map((u) => (
+                <div key={u.id} className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-200">{u.fullName ?? u.email}</p>
+                      <p className="truncate text-xs text-slate-500">{u.email}</p>
+                    </div>
+                    <Badge variant={u.accountStatus === "SUSPENDED" ? "red" : u.isAuthorized ? "green" : "amber"}>
+                      {u.accountStatus}
+                    </Badge>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge variant={u.role === "SUPER_ADMIN" ? "purple" : "slate"}>
+                      {u.role.replace("_", " ")}
+                    </Badge>
+                    <Badge variant="slate">{(u.commissionRate * 100).toFixed(0)}%</Badge>
+                  </div>
+                  <p className="mt-3 text-sm text-slate-500">
+                    {u._count?.ownedLeads ?? 0} leads | {u._count?.campaigns ?? 0} campaigns | {u._count?.outreachLogs ?? 0} sent | {u._count?.closedClients ?? 0} closed | $
+                    {(u.commissions ?? [])
+                      .filter((commission) => commission.status !== "VOIDED")
+                      .reduce((sum, commission) => sum + commission.commissionAmount, 0)
+                      .toLocaleString()} earned
+                  </p>
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <Button
+                      size="sm"
+                      variant={u.accountStatus === "SUSPENDED" ? "success" : "danger"}
+                      onClick={() =>
+                        updateUser(u, {
+                          accountStatus:
+                            u.accountStatus === "SUSPENDED" ? "ACTIVE" : "SUSPENDED",
+                        } as Partial<UserRow>)
+                      }
+                    >
+                      {u.accountStatus === "SUSPENDED" ? "Reactivate" : "Suspend"}
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => resetPassword(u)}>
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Reset
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-800 text-left text-slate-400">
@@ -250,6 +303,8 @@ export function AdminInvitesPanel() {
                 ))}
               </tbody>
             </table>
+            </div>
+            </>
           )}
         </CardBody>
       </Card>
@@ -262,6 +317,24 @@ export function AdminInvitesPanel() {
               <Mail className="h-4 w-4" /> No invites sent yet.
             </p>
           ) : (
+            <>
+            <div className="space-y-3 p-4 md:hidden">
+              {invites.map((inv) => (
+                <div key={inv.id} className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="min-w-0 break-words text-sm font-medium text-slate-200">{inv.email}</p>
+                    <Badge variant={inv.usedAt ? "green" : "amber"}>
+                      {inv.usedAt ? "Accepted" : "Pending"}
+                    </Badge>
+                  </div>
+                  <div className="mt-3 grid gap-1 text-sm text-slate-500">
+                    <p>Expires: {formatDate(inv.expiresAt)}</p>
+                    <p>Sent: {formatDate(inv.createdAt)}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-800 text-left text-slate-400">
@@ -286,6 +359,8 @@ export function AdminInvitesPanel() {
                 ))}
               </tbody>
             </table>
+            </div>
+            </>
           )}
         </CardBody>
       </Card>

@@ -134,7 +134,43 @@ export function CampaignsDashboard() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            <div className="space-y-3 p-4 md:hidden">
+              {campaigns.map((campaign) => (
+                <div key={campaign.id} className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-200">{campaign.name}</p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {campaign.businessCategory ?? "All categories"}
+                      </p>
+                    </div>
+                    <Badge variant={campaign.type === "SMS" ? "green" : "purple"}>{campaign.type}</Badge>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-sm text-slate-300">
+                    <p><span className="text-slate-500">Leads:</span> {campaign._count.leads}</p>
+                    <p><span className="text-slate-500">Sent:</span> {campaign.sentCount}</p>
+                    <p><span className="text-slate-500">Opened:</span> {campaign.openedCount}</p>
+                    <p><span className="text-slate-500">Clicked:</span> {campaign.clickedCount}</p>
+                    <p><span className="text-slate-500">Replied:</span> {campaign.repliedCount}</p>
+                    <p><span className="text-slate-500">Bounced:</span> {campaign.bouncedCount}</p>
+                  </div>
+                  <p className="mt-3 text-xs text-slate-500">
+                    Owner: {campaign.owner?.fullName ?? campaign.owner?.email ?? "-"}
+                  </p>
+                  <div className="mt-4 grid grid-cols-[1fr_auto] gap-2">
+                    <Button variant="secondary" loading={busyId === campaign.id} onClick={() => generateDrafts(campaign.id)}>
+                      <RefreshCw className="h-4 w-4" />
+                      Drafts
+                    </Button>
+                    <Button variant="danger" loading={busyId === campaign.id} onClick={() => deleteCampaign(campaign.id)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-800 text-left text-slate-400">
@@ -179,6 +215,7 @@ export function CampaignsDashboard() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </CardBody>
       </Card>

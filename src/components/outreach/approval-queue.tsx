@@ -234,7 +234,7 @@ export function ApprovalQueue() {
                   </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap">
                   <Button
                     type="button"
                     variant="secondary"

@@ -214,7 +214,59 @@ export function SavedLeadsList() {
               No saved leads yet. Search and save leads from the results page.
             </p>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            <div className="space-y-3 p-4 md:hidden">
+              {leads.map((lead) => (
+                <div key={lead.id} className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <Link
+                        href={`/leads/${lead.id}`}
+                        className="font-medium text-purple-300 hover:text-purple-200"
+                      >
+                        {lead.name}
+                      </Link>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {[lead.city, lead.state].filter(Boolean).join(", ") || "No location"}
+                      </p>
+                    </div>
+                    <LeadScoreBadge score={lead.leadScore} />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {lead.category && <Badge variant="purple">{lead.category}</Badge>}
+                    <WebsiteStatusBadge status={lead.websiteStatus} />
+                    <LeadStatusBadge status={lead.status} />
+                  </div>
+                  <div className="mt-3 grid gap-2 text-sm text-slate-300">
+                    <p><span className="text-slate-500">Phone:</span> {lead.phone ?? "-"}</p>
+                    <p><span className="text-slate-500">Website:</span> {lead.websiteUrl ?? "-"}</p>
+                    <p>
+                      <span className="text-slate-500">Reviews:</span>{" "}
+                      {lead.rating != null ? `${lead.rating.toFixed(1)} (${lead.reviewCount ?? 0})` : "-"}
+                    </p>
+                  </div>
+                  <div className="mt-4 flex gap-2">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="flex-1"
+                      onClick={() => window.location.assign(`/leads/${lead.id}`)}
+                    >
+                      View
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="danger"
+                      onClick={() => setDeleteTarget(lead)}
+                      title="Delete saved lead"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="hidden overflow-x-auto md:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-800 text-left text-slate-400">
@@ -296,6 +348,7 @@ export function SavedLeadsList() {
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </CardBody>
       </Card>
@@ -322,7 +375,7 @@ export function SavedLeadsList() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="mt-5 grid gap-2 sm:flex sm:justify-end">
               <Button
                 type="button"
                 variant="secondary"

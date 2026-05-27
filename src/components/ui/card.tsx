@@ -29,8 +29,8 @@ export function CardHeader({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 border-b border-slate-800 px-6 py-4">
-      <div>
+    <div className="flex flex-col gap-3 border-b border-slate-800 px-4 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-6">
+      <div className="min-w-0">
         <h2 className="text-lg font-semibold text-slate-100">{title}</h2>
         {description && (
           <p className="mt-1 text-sm text-slate-400">{description}</p>
@@ -48,5 +48,5 @@ export function CardBody({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <div className={cn("p-6", className)}>{children}</div>;
+  return <div className={cn("p-4 sm:p-6", className)}>{children}</div>;
 }
