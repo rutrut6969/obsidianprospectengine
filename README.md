@@ -268,11 +268,29 @@ Webhook processing:
 
 - verifies Square webhook signature
 - records webhook event payload
+- de-duplicates webhook events by Square event ID
+- matches clients by Square customer, invoice, subscription, or payment references
+- updates local invoice status (`DRAFT`, `SENT`, `VIEWED`, `PAID`, `FAILED`, `CANCELED`)
 - updates matching client payment status
 - updates last/next payment dates
 - records payment history
 - creates in-app notifications
-- creates retainer commission records when payment succeeds
+- creates one commission record per confirmed Square payment
+
+Client billing setup now supports:
+
+1. converting a saved lead into a linked client
+2. entering a manual upfront website build amount
+3. selecting a retainer tier
+4. sending a Square invoice for the upfront build
+5. creating/linking a Square subscription for recurring retainers
+6. storing Square customer, order, invoice, payment, and subscription references
+
+Retainer tiers:
+
+- `PROMO_100` - $100/month
+- `STANDARD_200` - $200/month
+- `CUSTOM` - local amount support; requires a Square plan variation ID before live subscription creation
 
 ### Commission Tracking
 
@@ -297,6 +315,8 @@ When Square confirms a retainer payment:
 3. retainer commission is calculated
 4. commission is created with `READY_TO_PAY`
 5. notifications are created for the lead generator and SUPER_ADMIN
+
+Super Admin can approve or mark payouts paid from the commissions workflow. The app does not auto-transfer funds yet; payout provider/reference fields are stored for future automation.
 
 ### AI Systems
 
@@ -433,6 +453,8 @@ https://prospect.obsidian-systems.tech
 | Variable | Required | Used By | Purpose |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | Yes | Prisma | PostgreSQL connection string |
+| `POSTGRES_URL` | Optional | Vercel/Postgres providers | Provider-managed Postgres URL if used |
+| `PRISMA_DATABASE_URL` | Optional | Prisma/provider setups | Alternate Prisma database URL if your provider separates pooled/direct URLs |
 | `SESSION_SECRET` | Yes | Auth | Signs secure JWT session cookies, minimum 32 chars |
 | `APP_URL` | Yes | Auth, emails, webhooks | Public app URL for links and webhook signature URL |
 | `NEXT_PUBLIC_APP_URL` | Optional | Client references | Public app URL if client-side references are needed |
@@ -480,6 +502,8 @@ https://prospect.obsidian-systems.tech
 | `SQUARE_WEBHOOK_SIGNATURE_KEY` | Required for webhooks | Webhooks | Validates Square webhook signatures |
 | `SQUARE_WEBHOOK_URL` | Recommended | Webhooks | Exact notification URL registered in Square |
 | `SQUARE_ENVIRONMENT` | Optional | Square | `sandbox` or `production` |
+| `SQUARE_PROMO_RETAINER_PLAN_VARIATION_ID` | Required for promo subscription setup | Square Subscriptions | Square catalog subscription plan variation for the $100/month promo retainer |
+| `SQUARE_STANDARD_RETAINER_PLAN_VARIATION_ID` | Required for standard subscription setup | Square Subscriptions | Square catalog subscription plan variation for the $200/month standard retainer |
 
 ### Payout Security
 
@@ -513,6 +537,8 @@ SQUARE_WEBHOOK_URL=https://prospect.obsidian-systems.tech/api/webhooks/square
 SQUARE_ACCESS_TOKEN=
 SQUARE_LOCATION_ID=
 SQUARE_ENVIRONMENT=production
+SQUARE_PROMO_RETAINER_PLAN_VARIATION_ID=
+SQUARE_STANDARD_RETAINER_PLAN_VARIATION_ID=
 ```
 
 Signature verification uses Square's HMAC-SHA256 method with the webhook signature key, exact notification URL, and raw request body. The app compares the computed signature with the `x-square-hmacsha256-signature` header.
@@ -523,6 +549,17 @@ Important:
 - Use HTTPS in production.
 - Keep the signature key server-side only.
 - Do not parse/modify the raw body before signature verification.
+
+### Square Subscription Plan Setup
+
+Square subscription creation requires catalog subscription plan variation IDs. Create the $100/month promo plan and $200/month standard plan in Square, then copy their plan variation IDs into:
+
+```bash
+SQUARE_PROMO_RETAINER_PLAN_VARIATION_ID=
+SQUARE_STANDARD_RETAINER_PLAN_VARIATION_ID=
+```
+
+Without those IDs, the app still saves the local client billing setup and sends the upfront invoice when Square invoice env vars are available, but recurring subscription setup reports as unavailable instead of crashing.
 
 ## Security Notes
 
@@ -578,6 +615,41 @@ Check:
 - `SQUARE_WEBHOOK_URL`
 - exact URL in Square dashboard
 - production vs sandbox app credentials
+
+### Square invoice sends but subscription setup is unavailable
+
+Check:
+
+- `SQUARE_PROMO_RETAINER_PLAN_VARIATION_ID`
+- `SQUARE_STANDARD_RETAINER_PLAN_VARIATION_ID`
+- matching sandbox vs production Square environment
+
+### New schema fields missing in production
+
+After schema changes, run:
+
+```bash
+npm run db:push
+```
+
+Then redeploy with Vercel.
+
+## Manual Testing Checklist
+
+1. Create or save a lead from search results.
+2. Open the lead detail page and click **Convert**.
+3. Confirm the lead status changes to `CLIENT` and a client record appears.
+4. Open Clients and run billing setup with a manual website build amount.
+5. Confirm the local invoice is created.
+6. If Square env vars are configured, confirm the Square invoice is sent and stores `squareInvoiceId` plus `invoiceUrl`.
+7. Select a retainer tier and confirm subscription setup stores `squareSubscriptionId`, or shows a clear unavailable reason when plan IDs are missing.
+8. Send a Square webhook test event to `/api/webhooks/square`.
+9. Confirm invoice/client payment status updates.
+10. Confirm one commission is created per Square payment ID with `READY_TO_PAY`.
+11. Approve and mark the commission paid as Super Admin.
+12. Confirm notifications and CRM timeline entries exist.
+13. Verify lead generator visibility cannot access another generator's private clients, invoices, or commissions.
+14. Test mobile widths: 360px, 390px, 430px, 768px, and desktop.
 
 ### Direct deposit values are not encrypted
 
