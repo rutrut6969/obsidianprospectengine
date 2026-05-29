@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Download, Trash2, X } from "lucide-react";
+import { BriefcaseBusiness, Download, Trash2, X } from "lucide-react";
 import {
   LeadScoreBadge,
   LeadStatusBadge,
@@ -41,6 +41,7 @@ export function SavedLeadsList() {
   const [q, setQ] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<SavedLead | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [convertingId, setConvertingId] = useState<string | null>(null);
 
   function buildParams() {
     const params = new URLSearchParams();
@@ -86,6 +87,23 @@ export function SavedLeadsList() {
     const params = buildParams();
     params.set("format", format);
     window.location.href = `/api/leads/export?${params.toString()}`;
+  }
+
+  async function convertLead(lead: SavedLead) {
+    if (!confirm(`Convert ${lead.name} into a client record?`)) return;
+    setConvertingId(lead.id);
+    const res = await fetch(`/api/leads/${lead.id}/convert`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ overrideDuplicate: false }),
+    });
+    setConvertingId(null);
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error ?? "Lead conversion failed");
+      return;
+    }
+    await fetchLeads();
   }
 
   const categories = Array.from(
@@ -262,6 +280,16 @@ export function SavedLeadsList() {
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
+                    <Button
+                      type="button"
+                      variant="success"
+                      loading={convertingId === lead.id}
+                      onClick={() => convertLead(lead)}
+                      disabled={lead.status === "CLIENT"}
+                      title="Convert to client"
+                    >
+                      <BriefcaseBusiness className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -333,15 +361,28 @@ export function SavedLeadsList() {
                         <LeadStatusBadge status={lead.status} />
                       </td>
                       <td className="px-4 py-3">
-                        <Button
-                          type="button"
-                          variant="danger"
-                          size="sm"
-                          onClick={() => setDeleteTarget(lead)}
-                          title="Delete saved lead"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            type="button"
+                            variant="success"
+                            size="sm"
+                            loading={convertingId === lead.id}
+                            onClick={() => convertLead(lead)}
+                            disabled={lead.status === "CLIENT"}
+                            title="Convert to client"
+                          >
+                            <BriefcaseBusiness className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="danger"
+                            size="sm"
+                            onClick={() => setDeleteTarget(lead)}
+                            title="Delete saved lead"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}

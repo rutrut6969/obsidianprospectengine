@@ -24,6 +24,27 @@ export function ownerScopedWhere<T extends { ownerId?: string | null }>(
   return isSessionSuperAdmin(session) ? {} : ({ ownerId: session.userId } as Partial<T>);
 }
 
+export function clientVisibilityWhere(
+  session: SessionPayload
+): Prisma.ClientWhereInput {
+  if (isSessionSuperAdmin(session)) return {};
+  return {
+    OR: [{ ownerId: session.userId }, { closedById: session.userId }],
+  };
+}
+
+export function invoiceVisibilityWhere(
+  session: SessionPayload
+): Prisma.InvoiceWhereInput {
+  if (isSessionSuperAdmin(session)) return {};
+  return {
+    OR: [
+      { ownerId: session.userId },
+      { client: { OR: [{ ownerId: session.userId }, { closedById: session.userId }] } },
+    ],
+  };
+}
+
 export function defaultLeadOwnership(session: SessionPayload): {
   ownerId: string;
   visibility: "GLOBAL" | "PRIVATE";

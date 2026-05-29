@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/guards";
-import { isSessionSuperAdmin } from "@/lib/auth/access";
+import { clientVisibilityWhere, invoiceVisibilityWhere, leadVisibilityWhere } from "@/lib/auth/access";
 
 export async function GET() {
   const auth = await requireSession();
   if ("error" in auth) return auth.error;
 
   const invoices = await prisma.invoice.findMany({
-    where: isSessionSuperAdmin(auth.session) ? {} : { ownerId: auth.session.userId },
+    where: invoiceVisibilityWhere(auth.session),
     orderBy: { updatedAt: "desc" },
     include: {
       owner: { select: { id: true, fullName: true, email: true } },
@@ -42,6 +42,20 @@ export async function POST(request: NextRequest) {
         { error: "Title and amount due are required." },
         { status: 400 }
       );
+    }
+
+    if (body.clientId) {
+      const client = await prisma.client.findFirst({
+        where: { id: body.clientId, ...clientVisibilityWhere(auth.session) },
+      });
+      if (!client) return NextResponse.json({ error: "Client not found" }, { status: 404 });
+    }
+
+    if (body.businessLeadId) {
+      const lead = await prisma.businessLead.findFirst({
+        where: { id: body.businessLeadId, ...leadVisibilityWhere(auth.session) },
+      });
+      if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
     }
 
     const invoice = await prisma.invoice.create({

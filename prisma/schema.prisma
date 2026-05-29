@@ -71,6 +71,11 @@ enum CampaignStatus {
 
 enum ActivityType {
   NOTE
+  EMAIL
+  SMS
+  CALL
+  AI_CALL
+  VOICEMAIL
   STATUS_CHANGE
   OUTREACH_GENERATED
   OUTREACH_APPROVED
@@ -79,6 +84,14 @@ enum ActivityType {
   LEAD_UPDATED
   LEAD_DELETED
   LEAD_RESTORED
+  LEAD_CONVERTED
+  INVOICE_SENT
+  PAYMENT_RECEIVED
+  PAYMENT_FAILED
+  SUBSCRIPTION_UPDATED
+  COMMISSION_CREATED
+  FOLLOW_UP
+  APPOINTMENT_SET
   EXPORT_CREATED
 }
 
@@ -183,6 +196,13 @@ enum RetainerBillingCycle {
   ANNUAL
 }
 
+enum RetainerTier {
+  NONE
+  PROMO_100
+  STANDARD_200
+  CUSTOM
+}
+
 enum ClientPaymentStatus {
   CURRENT
   DUE_SOON
@@ -205,11 +225,28 @@ enum PaymentEventType {
 }
 
 enum NotificationType {
+  CLIENT_CONVERTED
+  INVOICE_SENT
   PAYMENT_SUCCEEDED
   PAYMENT_FAILED
   PAYMENT_OVERDUE
   COMMISSION_READY
+  PAYOUT_APPROVED
+  PAYOUT_PAID
   SYSTEM
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+}
+
+enum NotificationDeliveryStatus {
+  QUEUED
+  SENT
+  FAILED
+  UNAVAILABLE
 }
 
 model BusinessLead {
@@ -255,6 +292,7 @@ model BusinessLead {
   contactMethods  ContactMethod[]
   clients         Client[]
   invoices        Invoice[]
+  callSessions    CallSession[]
 
   @@index([ownerId])
   @@index([visibility])
@@ -546,10 +584,12 @@ model User {
   clients          Client[] @relation("ClientOwner")
   closedClients    Client[] @relation("ClientCloser")
   commissions      Commission[] @relation("CommissionUser")
+  approvedPayouts  Commission[] @relation("PayoutApprover")
   invoices         Invoice[] @relation("InvoiceOwner")
   passwordResets   PasswordResetToken[]
   notifications     Notification[]
   paymentEvents     ClientPaymentEvent[] @relation("PaymentEventUser")
+  callSessions       CallSession[] @relation("CallSessionUser")
 }
 
 model Invite {
@@ -588,12 +628,17 @@ model Client {
   ownerId             String?
   closedById          String?
   businessName        String
+  businessCategory    String?
+  websiteUrl          String?
+  city                String?
+  state               String?
   contactName         String?
   contactEmail        String?
   contactPhone        String?
   websitePackage      String?
   upfrontWebsitePrice Float         @default(0)
   retainerAmount      Float         @default(0)
+  retainerTier        RetainerTier  @default(NONE)
   retainerBillingCycle RetainerBillingCycle @default(MONTHLY)
   retainerStartDate   DateTime?
   paymentStatus       PaymentStatus @default(UNPAID)
@@ -601,6 +646,7 @@ model Client {
   squareCustomerId    String?
   squareCardId        String?
   squareSubscriptionId String?
+  squareSubscriptionPlanVariationId String?
   latestSquareInvoiceId String?
   latestSquarePaymentId String?
   lastPaymentDate     DateTime?
@@ -618,6 +664,7 @@ model Client {
   projects     Project[]
   retainers    RetainerPayment[]
   paymentEvents ClientPaymentEvent[]
+  callSessions CallSession[]
 
   @@index([businessLeadId])
   @@index([ownerId])
@@ -638,6 +685,15 @@ model Commission {
   commissionRate   Float            @default(0.10)
   commissionAmount Float
   status           CommissionStatus @default(PENDING)
+  squarePaymentId  String?
+  squareEventId    String?
+  payoutProvider   String?
+  payoutMethod     PayoutMethod?
+  externalPayoutId String?
+  payoutApprovedById String?
+  payoutApprovedAt DateTime?
+  payoutProcessedAt DateTime?
+  payoutFailureReason String?
   payoutDate       DateTime?
   notes            String?
   createdAt        DateTime         @default(now())
@@ -646,10 +702,13 @@ model Commission {
   user    User     @relation("CommissionUser", fields: [userId], references: [id], onDelete: Cascade)
   client  Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
   invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  payoutApprovedBy User? @relation("PayoutApprover", fields: [payoutApprovedById], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([clientId])
   @@index([status])
+  @@index([squarePaymentId])
+  @@index([payoutApprovedById])
 }
 
 model Project {
@@ -695,7 +754,9 @@ model Invoice {
   viewedAt        DateTime?
   paidAt          DateTime?
   squareCustomerId String?
+  squareOrderId     String?
   squareInvoiceId  String?
+  squarePaymentId  String?
   invoiceUrl       String?
   notes            String?
   createdAt        DateTime      @default(now())
@@ -713,6 +774,7 @@ model Invoice {
   @@index([ownerId])
   @@index([status])
   @@index([squareInvoiceId])
+  @@index([squarePaymentId])
 }
 
 model RetainerPayment {
@@ -755,6 +817,7 @@ model ClientPaymentEvent {
   @@index([clientId])
   @@index([userId])
   @@index([squareEventId])
+  @@index([squarePaymentId])
   @@index([type])
   @@index([occurredAt])
 }
@@ -765,6 +828,12 @@ model Notification {
   type      NotificationType
   title     String
   body      String?
+  channel   NotificationChannel @default(IN_APP)
+  provider  String?
+  status    NotificationDeliveryStatus @default(SENT)
+  fallbackUsed Boolean @default(false)
+  error     String?
+  sentAt    DateTime?
   readAt    DateTime?
   metadata  Json?
   createdAt DateTime         @default(now())
@@ -773,6 +842,43 @@ model Notification {
 
   @@index([userId, readAt])
   @@index([type])
+  @@index([channel])
+  @@index([status])
+}
+
+model CallSession {
+  id              String    @id @default(cuid())
+  businessLeadId  String?
+  clientId        String?
+  userId          String?
+  provider        String?
+  externalCallId  String?
+  status          String    @default("PLANNED")
+  direction       String    @default("OUTBOUND")
+  phoneNumber     String?
+  scheduledAt     DateTime?
+  startedAt       DateTime?
+  endedAt         DateTime?
+  durationSeconds Int?
+  transcript      String?
+  recordingUrl    String?
+  summary         String?
+  outcome         String?
+  callbackAt      DateTime?
+  metadata        Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  businessLead BusinessLead? @relation(fields: [businessLeadId], references: [id], onDelete: SetNull)
+  client       Client?       @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  user         User?         @relation("CallSessionUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([businessLeadId])
+  @@index([clientId])
+  @@index([userId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([externalCallId])
 }
 
 model SquareWebhookEvent {

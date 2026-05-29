@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ClientStatus, PaymentStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/guards";
-import { isSessionSuperAdmin } from "@/lib/auth/access";
+import { clientVisibilityWhere } from "@/lib/auth/access";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -13,7 +13,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
     const { id } = await context.params;
     const existing = await prisma.client.findFirst({
-      where: { id, ...(isSessionSuperAdmin(auth.session) ? {} : { ownerId: auth.session.userId }) },
+      where: { id, ...clientVisibilityWhere(auth.session) },
     });
     if (!existing) return NextResponse.json({ error: "Client not found" }, { status: 404 });
 

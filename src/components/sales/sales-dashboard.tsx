@@ -9,9 +9,15 @@ import { Input, Label } from "@/components/ui/input";
 interface ClientRow {
   id: string;
   businessName: string;
+  businessCategory: string | null;
+  websiteUrl: string | null;
+  city: string | null;
+  state: string | null;
   contactEmail: string | null;
+  contactPhone: string | null;
   upfrontWebsitePrice: number;
   retainerAmount: number;
+  retainerTier: string;
   status: string;
   paymentStatus: string;
   retainerPaymentStatus: string;
@@ -19,7 +25,13 @@ interface ClientRow {
   nextPaymentDate: string | null;
   squareCustomerId: string | null;
   squareSubscriptionId: string | null;
+  latestSquareInvoiceId: string | null;
+  latestSquarePaymentId: string | null;
   owner: { fullName: string | null; email: string } | null;
+  closedBy: { fullName: string | null; email: string } | null;
+  businessLead: { id: string; name: string; category: string | null } | null;
+  invoices?: Array<{ id: string; title: string; amountDue: number; status: string; invoiceUrl: string | null }>;
+  commissions?: Array<{ id: string; commissionAmount: number; status: string }>;
   paymentEvents?: Array<{
     id: string;
     type: string;
@@ -33,9 +45,14 @@ interface CommissionRow {
   id: string;
   saleAmount: number;
   commissionAmount: number;
+  commissionRate: number;
   status: string;
+  squarePaymentId: string | null;
+  payoutDate: string | null;
+  payoutApprovedAt: string | null;
   user: { fullName: string | null; email: string };
   client: { businessName: string } | null;
+  invoice: { title: string; status: string } | null;
 }
 
 interface InvoiceRow {
@@ -44,6 +61,10 @@ interface InvoiceRow {
   amountDue: number;
   status: string;
   invoiceUrl: string | null;
+  squareInvoiceId: string | null;
+  squarePaymentId: string | null;
+  dueDate: string | null;
+  sentAt: string | null;
   client: { businessName: string } | null;
 }
 
@@ -54,6 +75,13 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
   const [amount, setAmount] = useState("");
   const [retainerAmount, setRetainerAmount] = useState("");
   const [title, setTitle] = useState("");
+  const [setupClientId, setSetupClientId] = useState<string | null>(null);
+  const [setupAmount, setSetupAmount] = useState("");
+  const [retainerTier, setRetainerTier] = useState("PROMO_100");
+  const [customRetainerAmount, setCustomRetainerAmount] = useState("");
+  const [setupBusy, setSetupBusy] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -84,6 +112,68 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
     setBusinessName("");
     setAmount("");
     setRetainerAmount("");
+    await load();
+  }
+
+  async function runBillingSetup(e: React.FormEvent) {
+    e.preventDefault();
+    if (!setupClientId) return;
+    setSetupBusy(true);
+    setMessage(null);
+    const res = await fetch(`/api/clients/${setupClientId}/billing-setup`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        websiteBuildAmount: Number(setupAmount || 0),
+        retainerTier,
+        customRetainerAmount: Number(customRetainerAmount || 0),
+        sendInvoice: true,
+        setupRetainer: true,
+      }),
+    });
+    const data = await res.json();
+    setSetupBusy(false);
+    if (!res.ok) {
+      setMessage(data.error ?? "Billing setup failed");
+      return;
+    }
+    setMessage(
+      [
+        data.invoiceSent ? "Invoice sent" : `Invoice not sent: ${data.invoiceError ?? "Square unavailable"}`,
+        data.retainerSetup ? "retainer linked" : `retainer pending: ${data.retainerError ?? "Square unavailable"}`,
+      ].join("; ")
+    );
+    await load();
+  }
+
+  async function sendInvoice(id: string) {
+    setBusyId(id);
+    const res = await fetch(`/api/invoices/${id}/square`, { method: "POST" });
+    const data = await res.json();
+    setBusyId(null);
+    if (!res.ok || data.unavailable) {
+      alert(data.error ?? data.reason ?? "Square invoice send failed");
+      return;
+    }
+    await load();
+  }
+
+  async function updateCommission(id: string, status: "APPROVED" | "PAID") {
+    setBusyId(id);
+    const res = await fetch(`/api/commissions/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status,
+        payoutDate: status === "PAID" ? new Date().toISOString() : undefined,
+      }),
+    });
+    const data = await res.json();
+    setBusyId(null);
+    if (!res.ok) {
+      alert(data.error ?? "Commission update failed");
+      return;
+    }
     await load();
   }
 
@@ -151,6 +241,60 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
       <Card>
         <CardHeader title={view === "clients" ? "Clients" : view === "commissions" ? "Commissions" : "Invoices"} />
         <CardBody className="p-0">
+          {view === "clients" && setupClientId && (
+            <div className="border-b border-slate-800 p-4 sm:p-6">
+              <form onSubmit={runBillingSetup} className="grid gap-4 md:grid-cols-4">
+                <div>
+                  <Label htmlFor="setupAmount">Website build amount</Label>
+                  <Input
+                    id="setupAmount"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={setupAmount}
+                    onChange={(e) => setSetupAmount(e.target.value)}
+                    placeholder="3000"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="retainerTier">Retainer tier</Label>
+                  <select
+                    id="retainerTier"
+                    value={retainerTier}
+                    onChange={(e) => setRetainerTier(e.target.value)}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500/50"
+                  >
+                    <option value="PROMO_100">$100/mo Promo</option>
+                    <option value="STANDARD_200">$200/mo Standard</option>
+                    <option value="CUSTOM">Custom</option>
+                    <option value="NONE">No retainer</option>
+                  </select>
+                </div>
+                {retainerTier === "CUSTOM" && (
+                  <div>
+                    <Label htmlFor="customRetainerAmount">Custom retainer</Label>
+                    <Input
+                      id="customRetainerAmount"
+                      type="number"
+                      min="0"
+                      value={customRetainerAmount}
+                      onChange={(e) => setCustomRetainerAmount(e.target.value)}
+                    />
+                  </div>
+                )}
+                <div className="flex items-end gap-2">
+                  <Button type="submit" loading={setupBusy} className="flex-1">
+                    Setup Billing
+                  </Button>
+                  <Button type="button" variant="ghost" onClick={() => setSetupClientId(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+              {message && <p className="mt-3 text-sm text-slate-400">{message}</p>}
+            </div>
+          )}
           {loading ? (
             <p className="p-6 text-sm text-slate-500">Loading...</p>
           ) : rows.length === 0 ? (
@@ -207,6 +351,55 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
                           View invoice
                         </a>
                       )}
+                      {"businessName" in row && (
+                        <>
+                          <p><span className="text-slate-500">Contact:</span> {row.contactEmail ?? row.contactPhone ?? "-"}</p>
+                          <p><span className="text-slate-500">Lead:</span> {row.businessLead?.name ?? "-"}</p>
+                          <p><span className="text-slate-500">Square:</span> {row.squareCustomerId ?? "Not linked"}</p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Button size="sm" variant="secondary" onClick={() => {
+                              setSetupClientId(row.id);
+                              setSetupAmount(String(row.upfrontWebsitePrice || ""));
+                              setRetainerTier(row.retainerTier || "PROMO_100");
+                            }}>
+                              Billing
+                            </Button>
+                          </div>
+                        </>
+                      )}
+                      {"amountDue" in row && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={busyId === row.id}
+                          onClick={() => sendInvoice(row.id)}
+                          disabled={row.status === "PAID"}
+                        >
+                          Send Invoice
+                        </Button>
+                      )}
+                      {"commissionAmount" in row && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <Button
+                            size="sm"
+                            variant="success"
+                            loading={busyId === row.id}
+                            onClick={() => updateCommission(row.id, "APPROVED")}
+                            disabled={row.status !== "READY_TO_PAY" && row.status !== "PENDING"}
+                          >
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            loading={busyId === row.id}
+                            onClick={() => updateCommission(row.id, "PAID")}
+                            disabled={row.status !== "APPROVED"}
+                          >
+                            Mark Paid
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -221,6 +414,7 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
                     <th className="px-4 py-3">Status</th>
                     {view === "clients" && <th className="px-4 py-3">Retainer</th>}
                     <th className="px-4 py-3">Owner</th>
+                    <th className="px-4 py-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -271,6 +465,54 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
                           : "user" in row
                             ? row.user.fullName ?? row.user.email
                             : "-"}
+                      </td>
+                      <td className="px-4 py-3">
+                        {"businessName" in row && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              setSetupClientId(row.id);
+                              setSetupAmount(String(row.upfrontWebsitePrice || ""));
+                              setRetainerTier(row.retainerTier || "PROMO_100");
+                            }}
+                          >
+                            Billing
+                          </Button>
+                        )}
+                        {"amountDue" in row && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            loading={busyId === row.id}
+                            onClick={() => sendInvoice(row.id)}
+                            disabled={row.status === "PAID"}
+                          >
+                            Send Invoice
+                          </Button>
+                        )}
+                        {"commissionAmount" in row && (
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              size="sm"
+                              variant="success"
+                              loading={busyId === row.id}
+                              onClick={() => updateCommission(row.id, "APPROVED")}
+                              disabled={row.status !== "READY_TO_PAY" && row.status !== "PENDING"}
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              loading={busyId === row.id}
+                              onClick={() => updateCommission(row.id, "PAID")}
+                              disabled={row.status !== "APPROVED"}
+                            >
+                              Paid
+                            </Button>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}

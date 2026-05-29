@@ -13,6 +13,7 @@ import {
   Star,
   MessageSquare,
   AtSign,
+  BriefcaseBusiness,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -101,6 +102,7 @@ export function LeadDetailClient({ id }: { id: string }) {
   const [auditing, setAuditing] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [discoveringEmail, setDiscoveringEmail] = useState(false);
+  const [converting, setConverting] = useState(false);
   const [draftChannel, setDraftChannel] = useState("EMAIL");
 
   async function loadLead() {
@@ -181,6 +183,24 @@ export function LeadDetailClient({ id }: { id: string }) {
     await loadLead();
   }
 
+  async function convertToClient() {
+    if (!lead) return;
+    if (!confirm(`Convert ${lead.name} into a client record?`)) return;
+    setConverting(true);
+    const res = await fetch(`/api/leads/${id}/convert`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ overrideDuplicate: false }),
+    });
+    setConverting(false);
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error ?? "Lead conversion failed");
+      return;
+    }
+    window.location.assign("/clients");
+  }
+
   if (loading) {
     return <p className="py-12 text-center text-slate-500">Loading lead...</p>;
   }
@@ -244,6 +264,15 @@ export function LeadDetailClient({ id }: { id: string }) {
           <Button variant="secondary" loading={discoveringEmail} onClick={discoverEmail}>
             <AtSign className="h-4 w-4" />
             Find Email
+          </Button>
+          <Button
+            variant="success"
+            loading={converting}
+            onClick={convertToClient}
+            disabled={lead.status === "CLIENT"}
+          >
+            <BriefcaseBusiness className="h-4 w-4" />
+            Convert
           </Button>
         </div>
       </div>
