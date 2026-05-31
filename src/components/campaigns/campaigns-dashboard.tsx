@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Megaphone, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronDown, Megaphone, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Input, Label, Select, Textarea } from "@/components/ui/input";
@@ -33,6 +33,7 @@ export function CampaignsDashboard() {
   const [category, setCategory] = useState("");
   const [notes, setNotes] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -90,7 +91,15 @@ export function CampaignsDashboard() {
     <div className="space-y-6">
       <Card>
         <CardHeader title="Create campaign" description="Campaigns are scoped to their owner unless you are SUPER_ADMIN" />
-        <CardBody>
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-3 border-b border-slate-800 px-4 py-3 text-left sm:px-6 md:hidden"
+          onClick={() => setCreateOpen((open) => !open)}
+        >
+          <span className="text-sm font-semibold text-slate-100">Create Campaign</span>
+          <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${createOpen ? "rotate-180" : ""}`} />
+        </button>
+        <CardBody className={`${createOpen ? "block" : "hidden"} md:block`}>
           <form onSubmit={createCampaign} className="grid gap-4 md:grid-cols-4">
             <div>
               <Label htmlFor="campaign-name">Name</Label>

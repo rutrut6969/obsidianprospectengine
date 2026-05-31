@@ -1,4 +1,4 @@
-import { leadVisibilityWhere } from "@/lib/auth/access";
+import { isSessionSuperAdmin, leadVisibilityWhere } from "@/lib/auth/access";
 import { SessionPayload } from "@/lib/auth/session";
 import { prisma } from "@/lib/prisma";
 import { createLeadActivity } from "@/lib/crm/activity";
@@ -19,7 +19,9 @@ export async function convertLeadToClient(params: {
     throw new Error("This lead is already linked to a client.");
   }
 
-  const ownerId = lead.ownerId ?? params.session.userId;
+  const ownerId = isSessionSuperAdmin(params.session)
+    ? lead.ownerId ?? params.session.userId
+    : params.session.userId;
 
   return prisma.$transaction(async (tx) => {
     const converted = await tx.client.create({

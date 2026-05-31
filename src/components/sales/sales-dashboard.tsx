@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -82,6 +83,7 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
   const [setupBusy, setSetupBusy] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -195,7 +197,15 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
       {view === "clients" && (
         <Card>
           <CardHeader title="Add client/prospect" />
-          <CardBody>
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-3 border-b border-slate-800 px-4 py-3 text-left sm:px-6 md:hidden"
+            onClick={() => setCreateOpen((open) => !open)}
+          >
+            <span className="text-sm font-semibold text-slate-100">Create Client</span>
+            <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${createOpen ? "rotate-180" : ""}`} />
+          </button>
+          <CardBody className={`${createOpen ? "block" : "hidden"} md:block`}>
             <form onSubmit={createClient} className="grid gap-4 md:grid-cols-4">
               <div>
                 <Label htmlFor="businessName">Business</Label>
@@ -220,7 +230,15 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
       {view === "invoices" && (
         <Card>
           <CardHeader title="Create invoice draft" description="Square sending stays unavailable unless Square env vars are configured" />
-          <CardBody>
+          <button
+            type="button"
+            className="flex w-full items-center justify-between gap-3 border-b border-slate-800 px-4 py-3 text-left sm:px-6 md:hidden"
+            onClick={() => setCreateOpen((open) => !open)}
+          >
+            <span className="text-sm font-semibold text-slate-100">Create Invoice</span>
+            <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${createOpen ? "rotate-180" : ""}`} />
+          </button>
+          <CardBody className={`${createOpen ? "block" : "hidden"} md:block`}>
             <form onSubmit={createInvoice} className="grid gap-4 md:grid-cols-3">
               <div>
                 <Label htmlFor="title">Title</Label>
@@ -243,6 +261,12 @@ export function SalesDashboard({ view }: { view: "clients" | "commissions" | "in
         <CardBody className="p-0">
           {view === "clients" && setupClientId && (
             <div className="border-b border-slate-800 p-4 sm:p-6">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold text-slate-100">Setup Retainer and Invoice</p>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setSetupClientId(null)}>
+                  Close
+                </Button>
+              </div>
               <form onSubmit={runBillingSetup} className="grid gap-4 md:grid-cols-4">
                 <div>
                   <Label htmlFor="setupAmount">Website build amount</Label>

@@ -7,6 +7,29 @@ import { isSessionSuperAdmin, leadVisibilityWhere } from "@/lib/auth/access";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+function ownershipMeta(
+  lead: {
+    ownerId: string | null;
+    visibility: "GLOBAL" | "PRIVATE";
+    owner?: { role: string } | null;
+  },
+  session: { userId: string; role: string }
+) {
+  return {
+    ownershipKind:
+      lead.ownerId === session.userId
+        ? "MY_LEAD"
+        : lead.visibility === "GLOBAL"
+          ? "GLOBAL"
+          : "PRIVATE",
+    isMine: lead.ownerId === session.userId,
+    isGlobal: lead.visibility === "GLOBAL",
+    isAdminLead:
+      lead.visibility === "GLOBAL" && !lead.ownerId ? true : lead.owner?.role === "SUPER_ADMIN",
+    canManage: session.role === "SUPER_ADMIN" || lead.ownerId === session.userId,
+  };
+}
+
 export async function GET(_request: NextRequest, context: RouteContext) {
   try {
     const auth = await requireSession();
@@ -16,6 +39,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
       where: { id, ...leadVisibilityWhere(auth.session) },
       include: {
         websiteAudits: { orderBy: { createdAt: "desc" } },
+        owner: { select: { id: true, fullName: true, email: true, role: true } },
         outreachDrafts: {
           orderBy: { updatedAt: "desc" },
           include: { logs: { orderBy: { createdAt: "desc" }, take: 3 } },
@@ -97,7 +121,9 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       return updated;
     });
 
-    return NextResponse.json({ lead });
+    return NextResponse.json({
+      lead: { ...lead, ...ownershipMeta(lead, auth.session) },
+    });
   } catch (error) {
     console.error("[leads PATCH]", error);
     return NextResponse.json(
@@ -125,7 +151,7 @@ export async function DELETE(_request: NextRequest, context: RouteContext) {
       );
     }
     const lead = await softDeleteLead(id, auth.session);
-    return NextResponse.json({ lead });
+    return NextResponse.json({ lead: { ...lead, ...ownershipMeta(lead, auth.session) } });
   } catch (error) {
     console.error("[leads DELETE]", error);
     return NextResponse.json(

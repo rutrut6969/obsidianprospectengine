@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
@@ -44,6 +45,7 @@ export function LeadSearchForm() {
   const [maxResults, setMaxResults] = useState(20);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -101,7 +103,15 @@ export function LeadSearchForm() {
         title="Search Parameters"
         description="Uses Google Places API (Text Search). Requires GOOGLE_PLACES_API_KEY."
       />
-      <CardBody>
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-3 border-b border-slate-800 px-4 py-3 text-left sm:px-6 md:hidden"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="text-sm font-semibold text-slate-100">Add Lead Search</span>
+        <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      <CardBody className={`${open ? "block" : "hidden"} md:block`}>
         <form onSubmit={handleSubmit} className="grid gap-5 sm:grid-cols-2">
           <div className="sm:col-span-2">
             <Label htmlFor="category">Business Category</Label>

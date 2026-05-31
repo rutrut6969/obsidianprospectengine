@@ -81,6 +81,62 @@ function duplicateConditions(
   return conditions;
 }
 
+function privateCopyConditionsFromLead(
+  lead: {
+    normalizedPhone?: string | null;
+    normalizedWebsite?: string | null;
+    duplicateKey?: string | null;
+  },
+  ownerId: string
+): Prisma.BusinessLeadWhereInput[] {
+  const conditions: Prisma.BusinessLeadWhereInput[] = [];
+  if (lead.normalizedPhone) conditions.push({ ownerId, normalizedPhone: lead.normalizedPhone });
+  if (lead.normalizedWebsite) conditions.push({ ownerId, normalizedWebsite: lead.normalizedWebsite });
+  if (lead.duplicateKey) conditions.push({ ownerId, duplicateKey: lead.duplicateKey });
+  return conditions;
+}
+
+function copyLeadData(
+  duplicate: Awaited<ReturnType<typeof findDuplicateLead>>,
+  data: Prisma.BusinessLeadUncheckedCreateInput,
+  session: SessionPayload,
+  input: LeadInput
+): Prisma.BusinessLeadUncheckedCreateInput {
+  if (!duplicate) return { ...data, placeId: null };
+
+  return {
+    ...data,
+    name: data.name || duplicate.name,
+    category: data.category ?? duplicate.category,
+    address: data.address ?? duplicate.address,
+    city: data.city ?? duplicate.city,
+    state: data.state ?? duplicate.state,
+    phone: data.phone ?? duplicate.phone,
+    websiteUrl: data.websiteUrl ?? duplicate.websiteUrl,
+    googleMapsUrl: data.googleMapsUrl ?? duplicate.googleMapsUrl,
+    rating: data.rating ?? duplicate.rating,
+    reviewCount: data.reviewCount ?? duplicate.reviewCount,
+    websiteStatus: data.websiteStatus ?? duplicate.websiteStatus,
+    leadScore: data.leadScore ?? duplicate.leadScore,
+    notes: input.notes ?? duplicate.notes,
+    status: (input.status as LeadStatus) ?? "SAVED",
+    placeId: null,
+    ownerId: session.userId,
+    visibility: "PRIVATE",
+    primaryEmail: duplicate.primaryEmail,
+    emailDiscoveryStatus: duplicate.emailDiscoveryStatus,
+    emailConfidence: duplicate.emailConfidence,
+    normalizedName: data.normalizedName ?? duplicate.normalizedName,
+    normalizedAddress: data.normalizedAddress ?? duplicate.normalizedAddress,
+    normalizedPhone: data.normalizedPhone ?? duplicate.normalizedPhone,
+    normalizedWebsite: data.normalizedWebsite ?? duplicate.normalizedWebsite,
+    duplicateKey: data.duplicateKey ?? duplicate.duplicateKey,
+    tags: duplicate.tags,
+    deletedAt: null,
+    isArchived: false,
+  };
+}
+
 export async function findDuplicateLead(input: LeadInput) {
   const data = buildLeadData(input);
   const OR = duplicateConditions(data);
@@ -98,6 +154,33 @@ export async function saveLeadWithDuplicateProtection(
 ) {
   const data = buildLeadData(input, session);
   const OR = duplicateConditions(data);
+  const ownedDuplicate =
+    session && OR.length > 0
+      ? await prisma.businessLead.findFirst({
+          where: {
+            OR,
+            ownerId: session.userId,
+          },
+          orderBy: { updatedAt: "desc" },
+        })
+      : null;
+
+  if (ownedDuplicate) {
+    const lead = await prisma.businessLead.update({
+      where: { id: ownedDuplicate.id },
+      data: {
+        ...data,
+        placeId: ownedDuplicate.placeId,
+        ownerId: ownedDuplicate.ownerId,
+        visibility: ownedDuplicate.visibility,
+        status: (input.status as LeadStatus) ?? ownedDuplicate.status,
+        deletedAt: null,
+        isArchived: false,
+      },
+    });
+    return { lead, duplicate: true, created: false, owned: true };
+  }
+
   const duplicate =
     OR.length === 0
       ? null
@@ -111,7 +194,42 @@ export async function saveLeadWithDuplicateProtection(
 
   if (duplicate) {
     if (session && !isSessionSuperAdmin(session) && duplicate.ownerId !== session.userId) {
-      return { lead: duplicate, duplicate: true, created: false, shared: true };
+      const privateCopyOR = privateCopyConditionsFromLead(duplicate, session.userId);
+      const existingPrivateCopy =
+        privateCopyOR.length > 0
+          ? await prisma.businessLead.findFirst({
+              where: { OR: privateCopyOR, deletedAt: null },
+              orderBy: { updatedAt: "desc" },
+            })
+          : null;
+
+      if (existingPrivateCopy) {
+        const lead = await prisma.businessLead.update({
+          where: { id: existingPrivateCopy.id },
+          data: {
+            status: (input.status as LeadStatus) ?? existingPrivateCopy.status,
+            notes: input.notes ?? existingPrivateCopy.notes,
+            deletedAt: null,
+            isArchived: false,
+          },
+        });
+        return { lead, duplicate: true, created: false, privateCopy: true };
+      }
+
+      const lead = await prisma.businessLead.create({
+        data: copyLeadData(duplicate, data, session, input),
+      });
+      await prisma.leadActivity.create({
+        data: {
+          businessLeadId: lead.id,
+          userId: session.userId,
+          type: "LEAD_UPDATED",
+          title: "Private lead saved",
+          body: "Private copy created from a shared global lead.",
+          metadata: { sourceLeadId: duplicate.id },
+        },
+      });
+      return { lead, duplicate: true, created: true, privateCopy: true };
     }
 
     const lead = await prisma.businessLead.update({

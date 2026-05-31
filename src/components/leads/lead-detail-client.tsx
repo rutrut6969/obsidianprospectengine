@@ -46,6 +46,14 @@ interface LeadDetail {
   leadScore: number;
   notes: string | null;
   status: string;
+  ownerId: string | null;
+  visibility: "GLOBAL" | "PRIVATE";
+  ownershipKind: "MY_LEAD" | "GLOBAL" | "PRIVATE";
+  isMine: boolean;
+  isGlobal: boolean;
+  isAdminLead: boolean;
+  canManage: boolean;
+  owner: { fullName: string | null; email: string; role: string } | null;
   websiteAudits: Array<{
     id: string;
     hasWebsite: boolean;
@@ -233,6 +241,7 @@ export function LeadDetailClient({ id }: { id: string }) {
           <h1 className="break-words text-2xl font-bold text-slate-100 sm:text-3xl">{lead.name}</h1>
           <div className="mt-2 flex flex-wrap gap-2">
             {lead.category && <Badge variant="purple">{lead.category}</Badge>}
+            <OwnershipBadges lead={lead} />
             <LeadScoreBadge score={lead.leadScore} />
             <WebsiteStatusBadge status={lead.websiteStatus} />
             <LeadStatusBadge status={lead.status} />
@@ -337,6 +346,15 @@ export function LeadDetailClient({ id }: { id: string }) {
                 View on Google Maps
               </a>
             )}
+            <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+              <p className="text-xs uppercase text-slate-500">Ownership</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <OwnershipBadges lead={lead} />
+              </div>
+              <p className="mt-2 break-words text-sm text-slate-400">
+                Owner: {lead.isMine ? "Me" : lead.owner?.fullName ?? lead.owner?.email ?? (lead.isGlobal ? "Obsidian Systems" : "-")}
+              </p>
+            </div>
             <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
               <p className="text-xs uppercase text-slate-500">Email discovery</p>
               <p className="mt-1 text-slate-300">{lead.emailDiscoveryStatus.replace(/_/g, " ")}</p>
@@ -521,6 +539,26 @@ export function LeadDetailClient({ id }: { id: string }) {
       </Card>
     </div>
   );
+}
+
+function OwnershipBadges({ lead }: { lead: Pick<LeadDetail, "isMine" | "isGlobal" | "isAdminLead"> }) {
+  if (lead.isMine) {
+    return (
+      <>
+        <Badge variant="green">MY LEAD</Badge>
+        <Badge variant="slate">PRIVATE</Badge>
+      </>
+    );
+  }
+  if (lead.isGlobal) {
+    return (
+      <>
+        <Badge variant="purple">GLOBAL</Badge>
+        <Badge variant="slate">{lead.isAdminLead ? "ADMIN LEAD" : "SHARED"}</Badge>
+      </>
+    );
+  }
+  return <Badge variant="slate">PRIVATE</Badge>;
 }
 
 function Info({ label, value }: { label: string; value: ReactNode }) {

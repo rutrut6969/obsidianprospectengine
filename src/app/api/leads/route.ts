@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { LeadStatus, Prisma, WebsiteStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/guards";
-import { leadVisibilityWhere } from "@/lib/auth/access";
+import { isSessionSuperAdmin, leadVisibilityWhere } from "@/lib/auth/access";
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,26 +20,33 @@ export async function GET(request: NextRequest) {
     const sort = searchParams.get("sort") ?? "leadScore";
     const direction = searchParams.get("direction") === "asc" ? "asc" : "desc";
     const q = searchParams.get("q");
+    const ownership = searchParams.get("ownership");
 
-    const where: Prisma.BusinessLeadWhereInput = {
-      ...leadVisibilityWhere(auth.session),
-    };
-    if (!includeDeleted) where.deletedAt = null;
-    if (status) where.status = status;
-    if (websiteStatus) where.websiteStatus = websiteStatus as WebsiteStatus;
-    if (category) where.category = { equals: category, mode: "insensitive" };
-    if (city) where.city = { equals: city, mode: "insensitive" };
-    if (state) where.state = { equals: state.toUpperCase(), mode: "insensitive" };
-    if (minScore) where.leadScore = { gte: Number(minScore) };
-    if (q) {
-      where.OR = [
-        { name: { contains: q, mode: "insensitive" } },
-        { city: { contains: q, mode: "insensitive" } },
-        { state: { contains: q, mode: "insensitive" } },
-        { category: { contains: q, mode: "insensitive" } },
-        { phone: { contains: q, mode: "insensitive" } },
-      ];
+    const filters: Prisma.BusinessLeadWhereInput[] = [leadVisibilityWhere(auth.session)];
+    if (!includeDeleted) filters.push({ deletedAt: null });
+    if (status) filters.push({ status });
+    if (websiteStatus) filters.push({ websiteStatus: websiteStatus as WebsiteStatus });
+    if (category) filters.push({ category: { equals: category, mode: "insensitive" } });
+    if (city) filters.push({ city: { equals: city, mode: "insensitive" } });
+    if (state) filters.push({ state: { equals: state.toUpperCase(), mode: "insensitive" } });
+    if (minScore) filters.push({ leadScore: { gte: Number(minScore) } });
+    if (ownership === "mine") {
+      filters.push({ ownerId: auth.session.userId });
+    } else if (ownership === "global") {
+      filters.push({ visibility: "GLOBAL" });
     }
+    if (q) {
+      filters.push({
+        OR: [
+          { name: { contains: q, mode: "insensitive" } },
+          { city: { contains: q, mode: "insensitive" } },
+          { state: { contains: q, mode: "insensitive" } },
+          { category: { contains: q, mode: "insensitive" } },
+          { phone: { contains: q, mode: "insensitive" } },
+        ],
+      });
+    }
+    const where: Prisma.BusinessLeadWhereInput = { AND: filters };
 
     const orderBy: Prisma.BusinessLeadOrderByWithRelationInput[] =
       sort === "category"
@@ -56,12 +63,29 @@ export async function GET(request: NextRequest) {
       where,
       orderBy,
       include: {
+        owner: { select: { id: true, fullName: true, email: true, role: true } },
         websiteAudits: { orderBy: { createdAt: "desc" }, take: 1 },
         outreachDrafts: { orderBy: { updatedAt: "desc" }, take: 1 },
       },
     });
 
-    return NextResponse.json({ leads });
+    return NextResponse.json({
+      leads: leads.map((lead) => ({
+        ...lead,
+        ownershipKind:
+          lead.ownerId === auth.session.userId
+            ? "MY_LEAD"
+            : lead.visibility === "GLOBAL"
+              ? "GLOBAL"
+              : "PRIVATE",
+        isMine: lead.ownerId === auth.session.userId,
+        isGlobal: lead.visibility === "GLOBAL",
+        isAdminLead: lead.visibility === "GLOBAL" && !lead.ownerId
+          ? true
+          : lead.owner?.role === "SUPER_ADMIN",
+        canManage: isSessionSuperAdmin(auth.session) || lead.ownerId === auth.session.userId,
+      })),
+    });
   } catch (error) {
     console.error("[leads GET]", error);
     return NextResponse.json(

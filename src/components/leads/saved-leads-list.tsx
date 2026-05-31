@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BriefcaseBusiness, Download, Trash2, X } from "lucide-react";
+import { BriefcaseBusiness, ChevronDown, Download, Trash2, X } from "lucide-react";
 import {
   LeadScoreBadge,
   LeadStatusBadge,
@@ -27,6 +27,14 @@ interface SavedLead {
   websiteStatus: WebsiteStatus;
   leadScore: number;
   status: string;
+  ownerId: string | null;
+  visibility: "GLOBAL" | "PRIVATE";
+  ownershipKind: "MY_LEAD" | "GLOBAL" | "PRIVATE";
+  isMine: boolean;
+  isGlobal: boolean;
+  isAdminLead: boolean;
+  canManage: boolean;
+  owner: { fullName: string | null; email: string; role: string } | null;
 }
 
 export function SavedLeadsList() {
@@ -39,6 +47,8 @@ export function SavedLeadsList() {
   const [sort, setSort] = useState("leadScore");
   const [direction, setDirection] = useState("desc");
   const [q, setQ] = useState("");
+  const [ownershipFilter, setOwnershipFilter] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<SavedLead | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [convertingId, setConvertingId] = useState<string | null>(null);
@@ -50,6 +60,7 @@ export function SavedLeadsList() {
     if (categoryFilter) params.set("category", categoryFilter);
     if (minScore) params.set("minScore", minScore);
     if (q) params.set("q", q);
+    if (ownershipFilter) params.set("ownership", ownershipFilter);
     if (sort) params.set("sort", sort);
     if (direction) params.set("direction", direction);
     return params;
@@ -67,7 +78,7 @@ export function SavedLeadsList() {
     const t = setTimeout(fetchLeads, 300);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, websiteStatusFilter, categoryFilter, minScore, q, sort, direction]);
+  }, [statusFilter, websiteStatusFilter, categoryFilter, minScore, q, ownershipFilter, sort, direction]);
 
   async function confirmDelete() {
     if (!deleteTarget) return;
@@ -113,7 +124,15 @@ export function SavedLeadsList() {
   return (
     <div className="space-y-4">
       <Card>
-        <CardBody className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-3 border-b border-slate-800 px-4 py-3 text-left sm:px-6 md:hidden"
+          onClick={() => setFiltersOpen((open) => !open)}
+        >
+          <span className="text-sm font-semibold text-slate-100">Edit Filters</span>
+          <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
+        </button>
+        <CardBody className={`${filtersOpen ? "grid" : "hidden"} gap-4 md:grid md:grid-cols-3 xl:grid-cols-6`}>
           <div>
             <Label htmlFor="q">Search</Label>
             <Input
@@ -122,6 +141,18 @@ export function SavedLeadsList() {
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
+          </div>
+          <div>
+            <Label htmlFor="ownership">Ownership</Label>
+            <Select
+              id="ownership"
+              value={ownershipFilter}
+              onChange={(e) => setOwnershipFilter(e.target.value)}
+            >
+              <option value="">All visible leads</option>
+              <option value="mine">My saved leads</option>
+              <option value="global">Global/admin leads</option>
+            </Select>
           </div>
           <div>
             <Label htmlFor="status">Status</Label>
@@ -252,12 +283,14 @@ export function SavedLeadsList() {
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {lead.category && <Badge variant="purple">{lead.category}</Badge>}
+                    <OwnershipBadges lead={lead} />
                     <WebsiteStatusBadge status={lead.websiteStatus} />
                     <LeadStatusBadge status={lead.status} />
                   </div>
                   <div className="mt-3 grid gap-2 text-sm text-slate-300">
                     <p><span className="text-slate-500">Phone:</span> {lead.phone ?? "-"}</p>
-                    <p><span className="text-slate-500">Website:</span> {lead.websiteUrl ?? "-"}</p>
+                    <p className="min-w-0 break-words"><span className="text-slate-500">Website:</span> {lead.websiteUrl ?? "-"}</p>
+                    <p className="min-w-0 break-words"><span className="text-slate-500">Owner:</span> {ownerLabel(lead)}</p>
                     <p>
                       <span className="text-slate-500">Reviews:</span>{" "}
                       {lead.rating != null ? `${lead.rating.toFixed(1)} (${lead.reviewCount ?? 0})` : "-"}
@@ -358,7 +391,10 @@ export function SavedLeadsList() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <LeadStatusBadge status={lead.status} />
+                        <div className="flex flex-wrap gap-2">
+                          <LeadStatusBadge status={lead.status} />
+                          <OwnershipBadges lead={lead} />
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex gap-2">
@@ -439,4 +475,34 @@ export function SavedLeadsList() {
       )}
     </div>
   );
+}
+
+function ownerLabel(lead: SavedLead) {
+  if (lead.isMine) return "Me";
+  if (lead.owner?.fullName) return lead.owner.fullName;
+  if (lead.owner?.email) return lead.owner.email;
+  if (lead.isGlobal) return "Obsidian Systems";
+  return "-";
+}
+
+function OwnershipBadges({ lead }: { lead: SavedLead }) {
+  if (lead.isMine) {
+    return (
+      <>
+        <Badge variant="green">MY LEAD</Badge>
+        <Badge variant="slate">PRIVATE</Badge>
+      </>
+    );
+  }
+
+  if (lead.isGlobal) {
+    return (
+      <>
+        <Badge variant="purple">GLOBAL</Badge>
+        <Badge variant="slate">{lead.isAdminLead ? "ADMIN LEAD" : "SHARED"}</Badge>
+      </>
+    );
+  }
+
+  return <Badge variant="slate">PRIVATE</Badge>;
 }
