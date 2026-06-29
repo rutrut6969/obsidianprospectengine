@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { OutreachStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getTwilioAvailability } from "@/lib/outreach/twilio";
+import { getOutreachTestOverride, getOutreachTestOverrideWarning } from "@/lib/outreach/email-config";
 import { requireSession } from "@/lib/auth/guards";
 import { isSessionSuperAdmin, leadVisibilityWhere } from "@/lib/auth/access";
 
@@ -33,6 +34,11 @@ export async function GET(request: NextRequest) {
       drafts,
       capabilities: {
         resend: Boolean(process.env.RESEND_API_KEY),
+        email: {
+          resendConfigured: Boolean(process.env.RESEND_API_KEY),
+          testOverrideActive: Boolean(getOutreachTestOverride()),
+          warning: getOutreachTestOverrideWarning(),
+        },
         twilio: getTwilioAvailability(),
         openai: Boolean(process.env.OPENAI_API_KEY),
       },

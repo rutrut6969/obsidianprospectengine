@@ -25,7 +25,7 @@ It combines:
 - Google Places lead discovery
 - Website audit and lead scoring
 - CRM and saved lead management
-- Email/SMS/Facebook outreach draft generation
+- Email/SMS outreach draft generation
 - Approval-based outbound outreach
 - Campaign organization
 - Client and invoice tracking
@@ -85,7 +85,6 @@ The platform is private by default and requires authenticated access.
 - Draft channels:
   - email
   - SMS
-  - Facebook DM
 - Draft statuses:
   - `DRAFT`
   - `APPROVED`
@@ -93,8 +92,10 @@ The platform is private by default and requires authenticated access.
   - `SENT`
   - `FAILED`
 - Approval queue for editing, approving, rejecting, and sending.
-- Resend email framework for approved outbound email drafts.
+- Resend email delivery for approved email drafts to the lead's primary email.
+- `OUTREACH_TEST_TO_EMAIL` can intentionally override recipients for QA; in production it is ignored unless `OUTREACH_ALLOW_TEST_OVERRIDE=true`.
 - Twilio SMS framework with missing-env graceful fallback, cooldowns, and delivery logging.
+- Facebook DM sending is not automated. Facebook-specific outreach can be copied manually from generated copy when needed.
 
 ### Campaigns
 
@@ -282,8 +283,8 @@ Client billing setup now supports:
 1. converting a saved lead into a linked client
 2. entering a manual upfront website build amount
 3. selecting a retainer tier
-4. sending a Square invoice for the upfront build
-5. creating/linking a Square subscription for recurring retainers
+4. sending a Square-hosted invoice for the upfront build when Square env vars are configured
+5. creating/linking a Square subscription for recurring retainers when Square catalog plan variation IDs are configured
 6. storing Square customer, order, invoice, payment, and subscription references
 
 Retainer tiers:
@@ -482,7 +483,8 @@ https://prospect.obsidian-systems.tech
 | `RESEND_API_KEY` | Required for sending | Invites/outreach | Sends invite and outbound emails |
 | `RESEND_FROM_EMAIL` | Required for sending | Invites | Verified sender identity |
 | `RESEND_OUTREACH_FROM_EMAIL` | Optional | Outreach | Preferred sender, e.g. `Obsidian Systems <sales@obsidian-systems.tech>` |
-| `OUTREACH_TEST_TO_EMAIL` | Optional/safety | Outreach | Test recipient until real lead emails are approved |
+| `OUTREACH_TEST_TO_EMAIL` | Optional/safety | Outreach | QA recipient override. Ignored in production unless explicitly enabled. |
+| `OUTREACH_ALLOW_TEST_OVERRIDE` | Optional/safety | Outreach | Set to `true` only when production outreach should intentionally route to `OUTREACH_TEST_TO_EMAIL`. |
 
 ### Twilio
 
@@ -491,7 +493,6 @@ https://prospect.obsidian-systems.tech
 | `TWILIO_ACCOUNT_SID` | Optional | SMS | Twilio account SID |
 | `TWILIO_AUTH_TOKEN` | Optional | SMS | Twilio auth token |
 | `TWILIO_FROM_NUMBER` | Optional | SMS | Sender phone number |
-| `TWILIO_PHONE_NUMBER` | Planned alias | SMS | Alternate sender variable name |
 
 ### Square
 
@@ -670,8 +671,8 @@ Without the key, the app stores only masked last-four metadata.
 
 - Automated payout workflows
 - Stripe Connect or Dwolla payout rails
-- Full Square invoice creation API integration
-- Square subscription creation from client records
+- Facebook/Instagram DM provider integration
+- Automated Square catalog plan provisioning
 - Advanced analytics dashboards
 - Multi-team support
 - More granular permissions

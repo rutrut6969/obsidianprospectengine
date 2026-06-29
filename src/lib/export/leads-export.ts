@@ -233,5 +233,9 @@ export function exportContentType(format: ExportFormat): string {
       return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     case "PDF":
       return "application/pdf";
+    default: {
+      const exhaustive: never = format;
+      throw new Error(`Unsupported export format: ${exhaustive}`);
+    }
   }
 }

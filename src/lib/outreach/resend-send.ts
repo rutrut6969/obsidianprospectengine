@@ -2,24 +2,17 @@ import { Resend } from "resend";
 import { OutreachDraft } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getActiveTemplate, renderTemplate } from "./email-template";
+import { getOutboundFromAddress, resolveOutreachEmailRecipient } from "./email-config";
 
 function getResendClient(): Resend | null {
   const key = process.env.RESEND_API_KEY;
   return key ? new Resend(key) : null;
 }
 
-function getOutboundFromAddress(): string {
-  return (
-    process.env.RESEND_OUTREACH_FROM_EMAIL ??
-    process.env.RESEND_FROM_EMAIL ??
-    "Obsidian Systems <sales@obsidian-systems.tech>"
-  );
-}
-
 export async function sendApprovedEmailDraft(draftId: string) {
   const draft = await prisma.outreachDraft.findUnique({
     where: { id: draftId },
-    include: { businessLead: true },
+    include: { businessLead: { include: { contactMethods: true } } },
   });
 
   if (!draft) throw new Error("Draft not found");
@@ -27,13 +20,12 @@ export async function sendApprovedEmailDraft(draftId: string) {
   if (draft.status !== "APPROVED") {
     throw new Error("Only approved email drafts can be sent");
   }
-  if (!draft.businessLead.phone && !draft.businessLead.websiteUrl) {
-    // Not a blocker; this keeps the function honest while email capture is added later.
-  }
-
-  const to = process.env.OUTREACH_TEST_TO_EMAIL;
-  if (!to) {
-    return markUnavailable(draft, "OUTREACH_TEST_TO_EMAIL is not set. Email sending is disabled.");
+  const recipient = resolveOutreachEmailRecipient(draft.businessLead);
+  if (!recipient) {
+    return markUnavailable(
+      draft,
+      "Lead does not have a primary email. Run email discovery or add a contact email before sending."
+    );
   }
 
   const resend = getResendClient();
@@ -57,7 +49,7 @@ export async function sendApprovedEmailDraft(draftId: string) {
 
   const { data, error } = await resend.emails.send({
     from: getOutboundFromAddress(),
-    to,
+    to: recipient.to,
     subject,
     html,
     text: draft.message,
@@ -90,6 +82,7 @@ export async function sendApprovedEmailDraft(draftId: string) {
       provider: "resend",
       deliveryStatus: "SENT",
       providerMessageId: data?.id ?? null,
+      error: recipient.warning,
       sentAt,
     },
   });
@@ -103,7 +96,11 @@ export async function sendApprovedEmailDraft(draftId: string) {
       businessLeadId: draft.businessLeadId,
       type: "OUTREACH_SENT",
       title: "Email draft sent",
-      body: data?.id ? `Resend message id: ${data.id}` : null,
+      body: [
+        `To: ${recipient.isTestOverride ? "test override" : recipient.to}`,
+        data?.id ? `Resend message id: ${data.id}` : null,
+        recipient.warning,
+      ].filter(Boolean).join(" | "),
     },
   });
 

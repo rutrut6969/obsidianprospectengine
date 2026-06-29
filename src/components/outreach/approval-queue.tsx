@@ -43,6 +43,11 @@ interface Draft {
 
 interface Capabilities {
   resend: boolean;
+  email?: {
+    resendConfigured: boolean;
+    testOverrideActive: boolean;
+    warning: string | null;
+  };
   openai: boolean;
   twilio: { available: boolean; reason: string | null };
 }
@@ -123,8 +128,15 @@ export function ApprovalQueue() {
           <div className="rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm">
             <p className="text-slate-500">Resend</p>
             <p className={capabilities?.resend ? "text-emerald-400" : "text-slate-400"}>
-              {capabilities?.resend ? "Configured" : "Unavailable"}
+              {capabilities?.email?.testOverrideActive
+                ? "Test override active"
+                : capabilities?.resend
+                  ? "Configured"
+                  : "Unavailable"}
             </p>
+            {capabilities?.email?.warning && (
+              <p className="mt-1 text-xs text-amber-300">{capabilities.email.warning}</p>
+            )}
           </div>
           <div className="rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm">
             <p className="text-slate-500">Twilio</p>
@@ -268,8 +280,12 @@ export function ApprovalQueue() {
                     type="button"
                     loading={busyId === draft.id}
                     onClick={() => updateDraft(draft, "send")}
-                    disabled={draft.status !== "APPROVED"}
-                    title="Only approved drafts can be sent"
+                    disabled={draft.status !== "APPROVED" || draft.channel === "FACEBOOK" || draft.channel === "PHONE"}
+                    title={
+                      draft.channel === "FACEBOOK" || draft.channel === "PHONE"
+                        ? "This channel is draft-only; delivery is not implemented."
+                        : "Only approved drafts can be sent"
+                    }
                   >
                     <Send className="h-4 w-4" />
                     Send

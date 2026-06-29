@@ -256,7 +256,6 @@ export function LeadDetailClient({ id }: { id: string }) {
           >
             <option value="EMAIL">Email</option>
             <option value="SMS">SMS</option>
-            <option value="FACEBOOK">Facebook</option>
           </Select>
           <Button variant="secondary" loading={auditing} onClick={reaudit}>
             <RefreshCw className="h-4 w-4" />
@@ -486,7 +485,7 @@ export function LeadDetailClient({ id }: { id: string }) {
         <CardBody className="space-y-4">
           {lead.outreachDrafts.length === 0 ? (
             <p className="text-sm text-slate-500">
-              No drafts yet. Generate an email, SMS, or Facebook draft.
+              No drafts yet. Generate an email or SMS draft.
             </p>
           ) : (
             lead.outreachDrafts.map((draft) => (
