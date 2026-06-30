@@ -77,7 +77,9 @@ const FACEBOOK_HOSTS = ["facebook.com", "fb.com", "m.facebook.com", "www.faceboo
 const PDF_FONT_NAME = "OpeNotoSans";
 const PDF_FONT_PATH = join(process.cwd(), "src/assets/fonts/NotoSans-Regular.ttf");
 const PDF_PAGE_MARGIN = 48;
-const PDF_CARD_GAP = 14;
+const PDF_CARD_GAP = 16;
+const PDF_MIN_CARD_HEIGHT = 266;
+const PDF_MAX_CARDS_PER_PAGE = 2;
 
 const ALLOWED_SORTS = new Set([
   "leadScore",
@@ -422,14 +424,57 @@ function activeFilterLines(filters?: ExportFilters): string[] {
   return lines.length > 0 ? lines : ["All saved leads"];
 }
 
+function officialWebsiteFor(lead: ExportLead): string {
+  if (!lead.websiteUrl || isFacebookUrl(lead.websiteUrl) || lead.websiteStatus === "FACEBOOK_ONLY") {
+    return "No official website.";
+  }
+  return lead.websiteUrl;
+}
+
 function addressFor(lead: ExportLead): string {
-  return [lead.address, lead.city, lead.state].filter(Boolean).join(", ");
+  const streetOrFormatted = lead.address?.trim();
+  const city = lead.city?.trim();
+  const state = lead.state?.trim();
+  const cityState = [city, state].filter(Boolean).join(", ");
+  if (!streetOrFormatted) return cityState;
+  const lowerAddress = streetOrFormatted.toLowerCase();
+  const hasCity = city ? lowerAddress.includes(city.toLowerCase()) : false;
+  const hasState = state ? lowerAddress.includes(state.toLowerCase()) : false;
+  if (hasCity || hasState || !cityState) return streetOrFormatted;
+  return `${streetOrFormatted}\n${cityState}`;
 }
 
 function ratingFor(lead: ExportLead): string {
   if (lead.rating == null && lead.reviewCount == null) return "No rating";
   if (lead.rating == null) return `${lead.reviewCount ?? 0} reviews`;
   return `${lead.rating.toFixed(1)} stars (${lead.reviewCount ?? 0} reviews)`;
+}
+
+function summaryStats(leads: ExportLead[]) {
+  const noWebsiteCount = leads.filter((lead) => lead.websiteStatus === "NO_WEBSITE").length;
+  const facebookOnlyCount = leads.filter((lead) => lead.websiteStatus === "FACEBOOK_ONLY").length;
+  const averageScore =
+    leads.length > 0
+      ? Math.round(leads.reduce((total, lead) => total + lead.leadScore, 0) / leads.length)
+      : 0;
+  const ratedLeads = leads.filter((lead) => lead.rating != null);
+  const averageRating =
+    ratedLeads.length > 0
+      ? ratedLeads.reduce((total, lead) => total + (lead.rating ?? 0), 0) / ratedLeads.length
+      : null;
+  const totalReviews = leads.reduce((total, lead) => total + (lead.reviewCount ?? 0), 0);
+  return { noWebsiteCount, facebookOnlyCount, averageScore, averageRating, totalReviews };
+}
+
+function opportunityFor(lead: ExportLead): string[] {
+  const opportunities: string[] = [];
+  if (lead.websiteStatus === "NO_WEBSITE") opportunities.push("No official website found");
+  if (lead.websiteStatus === "FACEBOOK_ONLY") opportunities.push("Facebook-only web presence");
+  if (!lead.primaryEmail) opportunities.push("No email found");
+  if ((lead.reviewCount ?? 0) >= 50) opportunities.push("High review count");
+  if (lead.leadScore >= 90) opportunities.push("High lead score");
+  if (!lead.phone) opportunities.push("Phone number needs discovery");
+  return opportunities.length > 0 ? opportunities : ["Review fit and outreach timing"];
 }
 
 function leadGroups(leads: ExportLead[]) {
@@ -467,28 +512,33 @@ function textHeight(doc: PDFKit.PDFDocument, text: string, width: number, fontSi
 }
 
 function leadCardHeight(doc: PDFKit.PDFDocument, lead: ExportLead, width: number) {
-  const contentWidth = width - 32;
-  const columnWidth = (contentWidth - 18) / 2;
+  const contentWidth = width - 36;
+  const columnWidth = (contentWidth - 22) / 2;
+  const nameHeight = textHeight(doc, lead.name, contentWidth - 100, 16);
   const notes = lead.notes?.trim() || "";
   const tags = lead.tags.length > 0 ? lead.tags.join(", ") : "";
+  const opportunities = opportunityFor(lead);
   const leftRows = [
     lead.category ?? "Uncategorized",
-    `Lead score: ${lead.leadScore}`,
     `Website status: ${websiteStatusLabel(lead.websiteStatus)}`,
     ratingFor(lead),
+    opportunities.join("; "),
   ];
   const rightRows = [
     lead.phone ?? "No phone",
     lead.primaryEmail ?? "No email",
-    lead.websiteUrl ?? "No website",
+    officialWebsiteFor(lead),
     facebookPageFor(lead) || "No Facebook page",
     addressFor(lead) || "No address",
   ];
-  const leftHeight = leftRows.reduce((total, row) => total + textHeight(doc, row, columnWidth, 8) + 5, 0);
-  const rightHeight = rightRows.reduce((total, row) => total + textHeight(doc, row, columnWidth, 8) + 5, 0);
+  const leftHeight = leftRows.reduce((total, row) => total + textHeight(doc, row, columnWidth, 8) + 13, 0);
+  const rightHeight = rightRows.reduce((total, row) => total + textHeight(doc, row, columnWidth, 8) + 13, 0);
   const notesHeight = notes ? textHeight(doc, notes, contentWidth, 8) + 18 : 0;
-  const tagsHeight = tags ? textHeight(doc, tags, contentWidth, 8) + 18 : 0;
-  return Math.max(118, 48 + Math.max(leftHeight, rightHeight) + notesHeight + tagsHeight);
+  const tagsHeight = tags ? textHeight(doc, tags, contentWidth, 8) + 16 : 0;
+  return Math.max(
+    PDF_MIN_CARD_HEIGHT,
+    34 + nameHeight + 20 + Math.max(leftHeight, rightHeight) + notesHeight + tagsHeight + 58
+  );
 }
 
 function drawKeyValue(
@@ -509,51 +559,87 @@ function drawKeyValue(
   return y + 9 + doc.heightOfString(value || "-", { width }) + 6;
 }
 
-function drawLeadCard(doc: PDFKit.PDFDocument, lead: ExportLead, width: number) {
+function drawScoreBlock(doc: PDFKit.PDFDocument, lead: ExportLead, x: number, y: number) {
+  doc.roundedRect(x, y, 76, 46, 8).fillAndStroke("#0f172a", "#0f172a");
+  doc.font(PDF_FONT_NAME).fontSize(7).fillColor("#cbd5e1").text("SCORE", x, y + 8, {
+    width: 76,
+    align: "center",
+    lineBreak: false,
+  });
+  doc.font(PDF_FONT_NAME).fontSize(18).fillColor("#ffffff").text(`${lead.leadScore}`, x, y + 20, {
+    width: 76,
+    align: "center",
+    lineBreak: false,
+  });
+}
+
+function drawWritingLine(doc: PDFKit.PDFDocument, label: string, x: number, y: number, width: number) {
+  doc.font(PDF_FONT_NAME).fontSize(7).fillColor("#64748b").text(label, x, y, { width: 80, lineBreak: false });
+  doc.moveTo(x + 78, y + 9).lineTo(x + width, y + 9).strokeColor("#cbd5e1").lineWidth(0.7).stroke();
+}
+
+function drawLeadCard(doc: PDFKit.PDFDocument, lead: ExportLead, width: number, cardsOnPage: number) {
   const height = leadCardHeight(doc, lead, width);
+  if (cardsOnPage >= PDF_MAX_CARDS_PER_PAGE) {
+    doc.addPage();
+  }
   ensurePdfSpace(doc, height + PDF_CARD_GAP);
   const x = PDF_PAGE_MARGIN;
   const y = doc.y;
-  const contentX = x + 16;
-  const contentY = y + 14;
-  const contentWidth = width - 32;
-  const columnWidth = (contentWidth - 18) / 2;
+  const contentX = x + 18;
+  const contentY = y + 16;
+  const contentWidth = width - 36;
+  const columnWidth = (contentWidth - 22) / 2;
 
-  doc.roundedRect(x, y, width, height, 8).fillAndStroke("#ffffff", "#dbe3ef");
-  doc.font(PDF_FONT_NAME).fontSize(13).fillColor("#0f172a").text(lead.name, contentX, contentY, {
-    width: contentWidth - 180,
+  doc.roundedRect(x + 1, y + 2, width, height, 10).fill("#e2e8f0");
+  doc.roundedRect(x, y, width, height, 10).fillAndStroke("#ffffff", "#cbd5e1");
+  doc.rect(x, y, width, 4).fill("#0f172a");
+
+  doc.font(PDF_FONT_NAME).fontSize(16).fillColor("#0f172a").text(lead.name, contentX, contentY, {
+    width: contentWidth - 100,
   });
-  drawBadge(doc, websiteStatusLabel(lead.websiteStatus), x + width - 166, contentY);
-  drawBadge(doc, statusLabel(lead.status), x + width - 78, contentY);
+  drawScoreBlock(doc, lead, x + width - 94, contentY - 2);
+  const badgeY = contentY + Math.max(24, doc.heightOfString(lead.name, { width: contentWidth - 100 })) + 4;
+  let badgeX = contentX;
+  badgeX += drawBadge(doc, websiteStatusLabel(lead.websiteStatus), badgeX, badgeY) + 6;
+  drawBadge(doc, statusLabel(lead.status), badgeX, badgeY);
 
-  let leftY = contentY + 28;
+  let leftY = badgeY + 24;
   leftY = drawKeyValue(doc, "Category", lead.category ?? "Uncategorized", contentX, leftY, columnWidth);
-  leftY = drawKeyValue(doc, "Lead Score", String(lead.leadScore), contentX, leftY, columnWidth);
   leftY = drawKeyValue(doc, "Website Status", websiteStatusLabel(lead.websiteStatus), contentX, leftY, columnWidth);
   leftY = drawKeyValue(doc, "Rating / Reviews", ratingFor(lead), contentX, leftY, columnWidth);
+  leftY = drawKeyValue(doc, "Opportunity", opportunityFor(lead).join("; "), contentX, leftY, columnWidth);
 
-  let rightY = contentY + 28;
-  const rightX = contentX + columnWidth + 18;
+  let rightY = badgeY + 24;
+  const rightX = contentX + columnWidth + 22;
   rightY = drawKeyValue(doc, "Phone", lead.phone ?? "No phone", rightX, rightY, columnWidth);
   rightY = drawKeyValue(doc, "Email", lead.primaryEmail ?? "No email", rightX, rightY, columnWidth);
-  rightY = drawKeyValue(doc, "Website", lead.websiteUrl ?? "No website", rightX, rightY, columnWidth);
+  rightY = drawKeyValue(doc, "Website", officialWebsiteFor(lead), rightX, rightY, columnWidth);
   rightY = drawKeyValue(doc, "Facebook", facebookPageFor(lead) || "No Facebook page", rightX, rightY, columnWidth);
   rightY = drawKeyValue(doc, "Address", addressFor(lead) || "No address", rightX, rightY, columnWidth);
 
-  let detailY = Math.max(leftY, rightY) + 4;
+  let detailY = Math.max(leftY, rightY) + 2;
   if (lead.notes?.trim()) {
     detailY = drawKeyValue(doc, "Notes", lead.notes.trim(), contentX, detailY, contentWidth);
   }
   if (lead.tags.length > 0) {
-    drawKeyValue(doc, "Tags", lead.tags.join(", "), contentX, detailY, contentWidth);
+    detailY = drawKeyValue(doc, "Tags", lead.tags.join(", "), contentX, detailY, contentWidth);
   }
 
+  const trackingY = Math.max(detailY + 2, y + height - 108);
+  doc.moveTo(contentX, trackingY - 7).lineTo(x + width - 18, trackingY - 7).strokeColor("#e2e8f0").lineWidth(0.8).stroke();
+  drawWritingLine(doc, "Notes:", contentX, trackingY, contentWidth);
+  drawWritingLine(doc, "Contacted Date:", contentX, trackingY + 18, contentWidth / 2 - 8);
+  drawWritingLine(doc, "Follow-up Date:", contentX + contentWidth / 2 + 8, trackingY + 18, contentWidth / 2 - 8);
+
   doc.y = y + height + PDF_CARD_GAP;
+  return doc.y >= doc.page.height - PDF_PAGE_MARGIN - PDF_MIN_CARD_HEIGHT ? 0 : cardsOnPage + 1;
 }
 
 function drawPdfHeader(doc: PDFKit.PDFDocument, leads: ExportLead[], filters?: ExportFilters) {
   const generatedAt = new Date();
   const pageWidth = doc.page.width - PDF_PAGE_MARGIN * 2;
+  const stats = summaryStats(leads);
 
   doc.font(PDF_FONT_NAME).fontSize(22).fillColor("#0f172a").text("Obsidian Prospect Engine", PDF_PAGE_MARGIN, PDF_PAGE_MARGIN);
   doc.font(PDF_FONT_NAME).fontSize(10).fillColor("#475569").text("Saved Leads Prospect Packet", PDF_PAGE_MARGIN, doc.y + 2);
@@ -564,7 +650,7 @@ function drawPdfHeader(doc: PDFKit.PDFDocument, leads: ExportLead[], filters?: E
   const summary = [
     ["Export Date", generatedAt.toLocaleString()],
     ["Total Leads", String(leads.length)],
-    ["Format", "Prospect packet"],
+    ["Average Score", leads.length > 0 ? `${stats.averageScore} / 100` : "-"],
   ];
   summary.forEach(([label, value], index) => {
     const x = PDF_PAGE_MARGIN + index * (cardWidth + 10);
@@ -573,6 +659,29 @@ function drawPdfHeader(doc: PDFKit.PDFDocument, leads: ExportLead[], filters?: E
     doc.font(PDF_FONT_NAME).fontSize(10).fillColor("#0f172a").text(value, x + 10, summaryTop + 22, { width: cardWidth - 20 });
   });
   doc.y = summaryTop + 58;
+
+  const statTop = doc.y;
+  const smallCardWidth = (pageWidth - 32) / 5;
+  const smallStats = [
+    ["No Website", String(stats.noWebsiteCount)],
+    ["Facebook Only", String(stats.facebookOnlyCount)],
+    ["Avg Rating", stats.averageRating == null ? "-" : stats.averageRating.toFixed(1)],
+    ["Total Reviews", String(stats.totalReviews)],
+    ["Groups", String(leadGroups(leads).length)],
+  ];
+  smallStats.forEach(([label, value], index) => {
+    const x = PDF_PAGE_MARGIN + index * (smallCardWidth + 8);
+    doc.roundedRect(x, statTop, smallCardWidth, 34, 5).fillAndStroke("#ffffff", "#e2e8f0");
+    doc.font(PDF_FONT_NAME).fontSize(6).fillColor("#64748b").text(label.toUpperCase(), x + 7, statTop + 7, {
+      width: smallCardWidth - 14,
+      lineBreak: false,
+    });
+    doc.font(PDF_FONT_NAME).fontSize(10).fillColor("#0f172a").text(value, x + 7, statTop + 18, {
+      width: smallCardWidth - 14,
+      lineBreak: false,
+    });
+  });
+  doc.y = statTop + 48;
 
   doc.font(PDF_FONT_NAME).fontSize(8).fillColor("#64748b").text("ACTIVE FILTERS", PDF_PAGE_MARGIN, doc.y);
   doc.moveDown(0.4);
@@ -617,13 +726,26 @@ export async function renderPdf(
     });
   } else {
     for (const [group, groupLeads] of leadGroups(leads)) {
-      ensurePdfSpace(doc, 58);
-      doc.font(PDF_FONT_NAME).fontSize(14).fillColor("#0f172a").text(websiteStatusLabel(group), PDF_PAGE_MARGIN, doc.y);
-      doc.font(PDF_FONT_NAME).fontSize(8).fillColor("#64748b").text(`${groupLeads.length} leads`, PDF_PAGE_MARGIN, doc.y + 2);
-      doc.moveDown(0.8);
+      ensurePdfSpace(doc, 86);
+      const sectionY = doc.y;
+      doc.roundedRect(PDF_PAGE_MARGIN, sectionY, pageWidth, 34, 7).fillAndStroke("#f8fafc", "#dbe3ef");
+      doc.font(PDF_FONT_NAME).fontSize(13).fillColor("#0f172a").text(websiteStatusLabel(group), PDF_PAGE_MARGIN + 14, sectionY + 9, {
+        width: pageWidth - 120,
+        lineBreak: false,
+      });
+      doc.font(PDF_FONT_NAME).fontSize(8).fillColor("#64748b").text(`${groupLeads.length} leads`, PDF_PAGE_MARGIN + pageWidth - 90, sectionY + 12, {
+        width: 76,
+        align: "right",
+        lineBreak: false,
+      });
+      doc.y = sectionY + 48;
 
+      let cardsOnPage = 0;
       for (const lead of groupLeads) {
-        drawLeadCard(doc, lead, pageWidth);
+        const beforePage = doc.bufferedPageRange().count;
+        cardsOnPage = drawLeadCard(doc, lead, pageWidth, cardsOnPage);
+        const afterPage = doc.bufferedPageRange().count;
+        if (afterPage > beforePage) cardsOnPage = 1;
       }
     }
   }
@@ -634,8 +756,8 @@ export async function renderPdf(
     doc.font(PDF_FONT_NAME).fontSize(7).fillColor("#94a3b8").text(
       `Obsidian Prospect Engine | Page ${index + 1} of ${range.count}`,
       PDF_PAGE_MARGIN,
-      doc.page.height - 28,
-      { width: pageWidth, align: "center" }
+      doc.page.height - PDF_PAGE_MARGIN - 10,
+      { width: pageWidth, align: "center", lineBreak: false, height: 10 }
     );
   }
 

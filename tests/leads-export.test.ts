@@ -45,11 +45,23 @@ function makeLead(index: number) {
     ...mockLead,
     id: `lead-${index}`,
     placeId: `place-${index}`,
-    name: `Example Prospect ${index}`,
+    name:
+      index % 7 === 0
+        ? `Example Prospect ${index} With A Very Long Business Name That Still Needs To Fit Cleanly`
+        : `Example Prospect ${index}`,
     category: index % 2 === 0 ? "plumber" : "roofer",
     phone: `555-01${String(index).padStart(2, "0")}`,
     primaryEmail: `owner${index}@example.com`,
-    websiteUrl: websiteStatus === "NO_WEBSITE" ? null : `https://example-${index}.com`,
+    websiteUrl:
+      websiteStatus === "NO_WEBSITE"
+        ? null
+        : websiteStatus === "FACEBOOK_ONLY"
+          ? `https://facebook.com/example-prospect-${index}-with-a-long-page-slug`
+          : `https://example-${index}.com`,
+    address:
+      index % 6 === 0
+        ? `${index} Very Long Commercial Parkway Suite ${index}, Austin, TX`
+        : `${index} Main St`,
     city: index % 2 === 0 ? "Austin" : "Dallas",
     websiteStatus,
     leadScore: 85 + (index % 15),
@@ -60,6 +72,10 @@ function makeLead(index: number) {
     tags: ["packet", `batch-${index % 5}`],
     createdAt: new Date(`2026-06-${String((index % 28) + 1).padStart(2, "0")}T12:00:00Z`),
   } as never;
+}
+
+function pdfPageCount(pdf: Buffer) {
+  return (pdf.toString("latin1").match(/\/Type\s*\/Page\b/g) ?? []).length;
 }
 
 test("export content types are wired for every supported saved-lead format", () => {
@@ -137,12 +153,13 @@ test("renders empty saved lead exports in every supported format", async () => {
 
 test("renders readable PDF prospect packets at realistic lead counts", async () => {
   const columns = parseExportColumns(null);
-  for (const count of [10, 50, 100]) {
+  for (const count of [1, 12, 50, 100]) {
     const leads = Array.from({ length: count }, (_, index) => makeLead(index + 1));
     const pdf = await renderPdf(leads, columns, {
       filters: { minScore: "85", websiteStatus: "NO_WEBSITE", sort: "leadScore" },
     });
     assert.equal(pdf.subarray(0, 4).toString("utf8"), "%PDF");
     assert.ok(pdf.length > count * 300, `expected substantial PDF output for ${count} leads`);
+    assert.ok(pdfPageCount(pdf) >= Math.ceil(count / 2), `expected report pagination for ${count} leads`);
   }
 });
