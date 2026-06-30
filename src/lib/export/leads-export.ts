@@ -15,6 +15,8 @@ import { prisma } from "@/lib/prisma";
 import { SessionPayload } from "@/lib/auth/session";
 import { leadVisibilityWhere } from "@/lib/auth/access";
 
+export type LeadExportFormat = ExportFormat | "JSON";
+
 export const EXPORT_COLUMNS = [
   "name",
   "category",
@@ -400,7 +402,7 @@ export async function renderPdf(leads: ExportLead[], columns: ExportColumn[]): P
   return done;
 }
 
-export function exportContentType(format: ExportFormat): string {
+export function exportContentType(format: LeadExportFormat): string {
   switch (format) {
     case "CSV":
       return "text/csv; charset=utf-8";

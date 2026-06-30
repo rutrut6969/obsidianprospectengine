@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ExportFormat } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/auth/guards";
 import {
   exportContentType,
   getExportLeads,
+  LeadExportFormat,
   parseExportColumns,
   renderCsv,
   renderDocx,
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     if ("error" in auth) return auth.error;
 
     const { searchParams } = new URL(request.url);
-    const format = (searchParams.get("format") ?? "csv").toUpperCase() as ExportFormat;
+    const format = (searchParams.get("format") ?? "csv").toUpperCase() as LeadExportFormat;
     if (!["CSV", "XLSX", "JSON", "PDF", "DOCX"].includes(format)) {
       return NextResponse.json({ error: "Unsupported export format" }, { status: 400 });
     }
@@ -52,16 +52,18 @@ export async function GET(request: NextRequest) {
               ? await renderDocx(leads, columns)
               : await renderPdf(leads, columns);
 
-    await prisma.exportLog.create({
-      data: {
-        format,
-        userId: auth.session.userId,
-        filename,
-        filters,
-        columnNames: columns,
-        rowCount: leads.length,
-      },
-    });
+    if (format !== "JSON") {
+      await prisma.exportLog.create({
+        data: {
+          format,
+          userId: auth.session.userId,
+          filename,
+          filters,
+          columnNames: columns,
+          rowCount: leads.length,
+        },
+      });
+    }
 
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
