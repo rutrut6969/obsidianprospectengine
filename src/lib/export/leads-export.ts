@@ -10,7 +10,7 @@ import {
   TextRun,
   WidthType,
 } from "docx";
-import { ExportFormat, Prisma } from "@prisma/client";
+import { ActivityType, ExportFormat, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { SessionPayload } from "@/lib/auth/session";
 import { leadVisibilityWhere } from "@/lib/auth/access";
@@ -18,17 +18,22 @@ import { leadVisibilityWhere } from "@/lib/auth/access";
 export const EXPORT_COLUMNS = [
   "name",
   "category",
+  "phone",
+  "primaryEmail",
+  "websiteUrl",
+  "facebookPage",
   "address",
   "city",
   "state",
-  "phone",
-  "websiteUrl",
   "websiteStatus",
   "leadScore",
   "rating",
   "reviewCount",
-  "notes",
   "status",
+  "notes",
+  "tags",
+  "createdAt",
+  "lastContactedAt",
 ] as const;
 
 type ExportColumn = (typeof EXPORT_COLUMNS)[number];
@@ -36,18 +41,59 @@ type ExportColumn = (typeof EXPORT_COLUMNS)[number];
 const HEADERS: Record<ExportColumn, string> = {
   name: "Business Name",
   category: "Category",
+  phone: "Phone",
+  primaryEmail: "Email",
+  websiteUrl: "Website",
+  facebookPage: "Facebook Page",
   address: "Address",
   city: "City",
   state: "State",
-  phone: "Phone",
-  websiteUrl: "Website",
   websiteStatus: "Website Status",
   leadScore: "Lead Score",
   rating: "Rating",
   reviewCount: "Reviews",
-  notes: "Notes",
   status: "Contact Status",
+  notes: "Notes",
+  tags: "Tags",
+  createdAt: "Created/Saved Date",
+  lastContactedAt: "Last Contacted Date",
 };
+
+const CONTACT_ACTIVITY_TYPES: ActivityType[] = [
+  "EMAIL",
+  "SMS",
+  "CALL",
+  "AI_CALL",
+  "VOICEMAIL",
+  "OUTREACH_SENT",
+  "FOLLOW_UP",
+  "APPOINTMENT_SET",
+];
+
+const FACEBOOK_HOSTS = ["facebook.com", "fb.com", "m.facebook.com", "www.facebook.com"];
+
+const ALLOWED_SORTS = new Set([
+  "leadScore",
+  "category",
+  "city",
+  "websiteStatus",
+  "reviewCount",
+  "createdAt",
+  "updatedAt",
+  "status",
+]);
+
+type ExportLead = Prisma.BusinessLeadGetPayload<{
+  include: {
+    contactMethods: true;
+    outreachLogs: { orderBy: { sentAt: "desc" }; take: 1 };
+    activities: {
+      where: { type: { in: typeof CONTACT_ACTIVITY_TYPES } };
+      orderBy: { createdAt: "desc" };
+      take: 1;
+    };
+  };
+}>;
 
 export function parseExportColumns(value: string | null): ExportColumn[] {
   if (!value) return [...EXPORT_COLUMNS];
@@ -66,41 +112,115 @@ export async function getExportLeads(filters: {
   minScore?: string | null;
   category?: string | null;
   websiteStatus?: string | null;
+  ownership?: string | null;
+  city?: string | null;
+  state?: string | null;
+  sort?: string | null;
+  direction?: string | null;
 }, session?: SessionPayload) {
-  const where: Prisma.BusinessLeadWhereInput = {
-    deletedAt: null,
-    ...(session ? leadVisibilityWhere(session) : {}),
-  };
-  if (filters.status) where.status = filters.status as never;
-  if (filters.category) where.category = { equals: filters.category, mode: "insensitive" };
-  if (filters.websiteStatus) where.websiteStatus = filters.websiteStatus as never;
-  if (filters.minScore) where.leadScore = { gte: Number(filters.minScore) };
+  const whereFilters: Prisma.BusinessLeadWhereInput[] = [
+    { deletedAt: null },
+    ...(session ? [leadVisibilityWhere(session)] : []),
+  ];
+
+  if (filters.status) whereFilters.push({ status: filters.status as never });
+  if (filters.category) whereFilters.push({ category: { equals: filters.category, mode: "insensitive" } });
+  if (filters.websiteStatus) whereFilters.push({ websiteStatus: filters.websiteStatus as never });
+  if (filters.city) whereFilters.push({ city: { equals: filters.city, mode: "insensitive" } });
+  if (filters.state) whereFilters.push({ state: { equals: filters.state.toUpperCase(), mode: "insensitive" } });
+  if (filters.minScore) whereFilters.push({ leadScore: { gte: Number(filters.minScore) } });
+  if (filters.ownership === "mine" && session) {
+    whereFilters.push({ ownerId: session.userId });
+  } else if (filters.ownership === "global") {
+    whereFilters.push({ visibility: "GLOBAL" });
+  }
   if (filters.q) {
-    where.OR = [
-      { name: { contains: filters.q, mode: "insensitive" } },
-      { category: { contains: filters.q, mode: "insensitive" } },
-      { city: { contains: filters.q, mode: "insensitive" } },
-      { state: { contains: filters.q, mode: "insensitive" } },
-    ];
+    whereFilters.push({
+      OR: [
+        { name: { contains: filters.q, mode: "insensitive" } },
+        { category: { contains: filters.q, mode: "insensitive" } },
+        { city: { contains: filters.q, mode: "insensitive" } },
+        { state: { contains: filters.q, mode: "insensitive" } },
+        { phone: { contains: filters.q, mode: "insensitive" } },
+        { primaryEmail: { contains: filters.q, mode: "insensitive" } },
+      ],
+    });
   }
 
+  const direction = filters.direction === "asc" ? "asc" : "desc";
+  const sort = filters.sort && ALLOWED_SORTS.has(filters.sort) ? filters.sort : "leadScore";
+  const orderBy: Prisma.BusinessLeadOrderByWithRelationInput[] =
+    sort === "category"
+      ? [{ category: direction }, { name: "asc" }]
+      : sort === "city"
+        ? [{ city: direction }, { name: "asc" }]
+        : sort === "websiteStatus"
+          ? [{ websiteStatus: direction }, { leadScore: "desc" }]
+          : sort === "reviewCount"
+            ? [{ reviewCount: direction }, { leadScore: "desc" }]
+            : sort === "createdAt"
+              ? [{ createdAt: direction }]
+              : sort === "updatedAt"
+                ? [{ updatedAt: direction }]
+                : sort === "status"
+                  ? [{ status: direction }, { updatedAt: "desc" }]
+                  : [{ leadScore: direction }, { updatedAt: "desc" }];
+
   return prisma.businessLead.findMany({
-    where,
-    orderBy: [{ leadScore: "desc" }, { updatedAt: "desc" }],
+    where: { AND: whereFilters },
+    orderBy,
+    include: {
+      contactMethods: true,
+      outreachLogs: { orderBy: { sentAt: "desc" }, take: 1 },
+      activities: {
+        where: { type: { in: CONTACT_ACTIVITY_TYPES } },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
+    },
     take: 1000,
   });
 }
 
-function valueFor(row: Awaited<ReturnType<typeof getExportLeads>>[number], column: ExportColumn) {
+function isFacebookUrl(value: string | null | undefined): boolean {
+  if (!value) return false;
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return FACEBOOK_HOSTS.some((facebookHost) => host === facebookHost || host.endsWith(`.${facebookHost}`));
+  } catch {
+    return false;
+  }
+}
+
+function formatDate(value: Date | null | undefined): string {
+  return value ? value.toISOString().slice(0, 10) : "";
+}
+
+function facebookPageFor(row: ExportLead): string {
+  const explicitFacebook = row.contactMethods.find((method) => method.type === "FACEBOOK")?.value;
+  if (explicitFacebook) return explicitFacebook;
+  return isFacebookUrl(row.websiteUrl) ? row.websiteUrl ?? "" : "";
+}
+
+function lastContactedAt(row: ExportLead): Date | null {
+  const logDate = row.outreachLogs[0]?.sentAt ?? null;
+  const activityDate = row.activities[0]?.createdAt ?? null;
+  if (logDate && activityDate) return logDate > activityDate ? logDate : activityDate;
+  return logDate ?? activityDate;
+}
+
+export function valueFor(row: ExportLead, column: ExportColumn): string {
+  if (column === "primaryEmail") return row.primaryEmail ?? "";
+  if (column === "facebookPage") return facebookPageFor(row);
+  if (column === "tags") return row.tags.join(", ");
+  if (column === "createdAt") return formatDate(row.createdAt);
+  if (column === "lastContactedAt") return formatDate(lastContactedAt(row));
   const value = row[column];
   if (value == null) return "";
   return String(value);
 }
 
-function tableRows(
-  leads: Awaited<ReturnType<typeof getExportLeads>>,
-  columns: ExportColumn[]
-) {
+function tableRows(leads: ExportLead[], columns: ExportColumn[]) {
   return leads.map((lead) => {
     const row: Record<string, string> = {};
     for (const column of columns) row[HEADERS[column]] = valueFor(lead, column);
@@ -108,10 +228,7 @@ function tableRows(
   });
 }
 
-export function renderCsv(
-  leads: Awaited<ReturnType<typeof getExportLeads>>,
-  columns: ExportColumn[]
-): Buffer {
+export function renderCsv(leads: ExportLead[], columns: ExportColumn[]): Buffer {
   const rows = [columns.map((column) => HEADERS[column])];
   rows.push(...leads.map((lead) => columns.map((column) => valueFor(lead, column))));
   const csv = rows
@@ -124,20 +241,14 @@ export function renderCsv(
   return Buffer.from(csv, "utf8");
 }
 
-export function renderXlsx(
-  leads: Awaited<ReturnType<typeof getExportLeads>>,
-  columns: ExportColumn[]
-): Buffer {
+export function renderXlsx(leads: ExportLead[], columns: ExportColumn[]): Buffer {
   const workbook = XLSX.utils.book_new();
   const worksheet = XLSX.utils.json_to_sheet(tableRows(leads, columns));
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Leads");
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Saved Leads");
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }
 
-export async function renderDocx(
-  leads: Awaited<ReturnType<typeof getExportLeads>>,
-  columns: ExportColumn[]
-): Promise<Buffer> {
+export async function renderDocx(leads: ExportLead[], columns: ExportColumn[]): Promise<Buffer> {
   const rows = [
     new TableRow({
       children: columns.map(
@@ -165,9 +276,9 @@ export async function renderDocx(
       {
         children: [
           new Paragraph({
-            children: [new TextRun({ text: "Obsidian Prospect Engine Lead Export", bold: true, size: 28 })],
+            children: [new TextRun({ text: "Obsidian Prospect Engine Saved Leads Export", bold: true, size: 28 })],
           }),
-          new Paragraph(`Generated ${new Date().toLocaleString()} with ${leads.length} leads.`),
+          new Paragraph(`Generated ${new Date().toLocaleString()} with ${leads.length} saved leads.`),
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             rows,
@@ -179,10 +290,7 @@ export async function renderDocx(
   return Packer.toBuffer(doc);
 }
 
-export async function renderPdf(
-  leads: Awaited<ReturnType<typeof getExportLeads>>,
-  columns: ExportColumn[]
-): Promise<Buffer> {
+export async function renderPdf(leads: ExportLead[], columns: ExportColumn[]): Promise<Buffer> {
   const doc = new PDFDocument({ margin: 36, size: "LETTER", layout: "landscape" });
   const chunks: Buffer[] = [];
 
@@ -191,8 +299,8 @@ export async function renderPdf(
     doc.on("end", () => resolve(Buffer.concat(chunks)));
   });
 
-  doc.fillColor("#111827").fontSize(18).text("Obsidian Prospect Engine Lead Export");
-  doc.fillColor("#475569").fontSize(9).text(`Generated ${new Date().toLocaleString()} · ${leads.length} leads`);
+  doc.fillColor("#111827").fontSize(18).text("Obsidian Prospect Engine Saved Leads Export");
+  doc.fillColor("#475569").fontSize(9).text(`Generated ${new Date().toLocaleString()} | ${leads.length} saved leads`);
   doc.moveDown();
 
   const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;

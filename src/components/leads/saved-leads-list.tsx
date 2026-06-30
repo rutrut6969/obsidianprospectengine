@@ -237,7 +237,12 @@ export function SavedLeadsList() {
       </Card>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-500">{leads.length} leads shown</p>
+        <div>
+          <p className="text-sm text-slate-500">{leads.length} leads shown</p>
+          <p className="mt-1 text-xs text-slate-600">
+            Export downloads the current saved-lead filters and visible ownership scope.
+          </p>
+        </div>
         <div className="flex flex-wrap gap-2">
           {(["csv", "xlsx", "pdf", "docx"] as const).map((format) => (
             <Button

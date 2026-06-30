@@ -30,10 +30,15 @@ export async function GET(request: NextRequest) {
       minScore: searchParams.get("minScore"),
       category: searchParams.get("category"),
       websiteStatus: searchParams.get("websiteStatus"),
+      ownership: searchParams.get("ownership"),
+      city: searchParams.get("city"),
+      state: searchParams.get("state"),
+      sort: searchParams.get("sort"),
+      direction: searchParams.get("direction"),
     };
     const leads = await getExportLeads(filters, auth.session);
     const timestamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-    const filename = `obsidian-leads-${timestamp}.${format.toLowerCase()}`;
+    const filename = `obsidian-saved-leads-${timestamp}.${format.toLowerCase()}`;
 
     const buffer =
       format === "CSV"
