@@ -98,6 +98,7 @@ enum ActivityType {
 enum ExportFormat {
   CSV
   XLSX
+  JSON
   PDF
   DOCX
 }

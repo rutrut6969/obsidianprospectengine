@@ -5,8 +5,10 @@ import {
   parseExportColumns,
   renderCsv,
   renderDocx,
+  renderJson,
   renderPdf,
   renderXlsx,
+  toImportableLeadRows,
   valueFor,
 } from "../src/lib/export/leads-export";
 
@@ -38,6 +40,7 @@ test("export content types are wired for every supported saved-lead format", () 
     exportContentType("XLSX"),
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
   );
+  assert.equal(exportContentType("JSON"), "application/json; charset=utf-8");
   assert.equal(
     exportContentType("DOCX"),
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -61,12 +64,24 @@ test("computed export values include Facebook page, tags, and last contacted dat
   assert.equal(valueFor(mockLead, "lastContactedAt"), "2026-06-20");
 });
 
+test("JSON export uses stable importable field names", () => {
+  const rows = toImportableLeadRows([mockLead], new Date("2026-06-30T12:00:00Z"));
+  assert.equal(rows[0].businessName, "Example Plumbing");
+  assert.equal(rows[0].website, "https://facebook.com/exampleplumbing");
+  assert.equal(rows[0].facebookUrl, "https://facebook.com/exampleplumbing");
+  assert.equal(rows[0].googlePlaceId, undefined);
+  assert.equal(rows[0].originalSavedLeadId, undefined);
+
+  const json = JSON.parse(renderJson([mockLead]).toString("utf8")) as { leads: unknown[] };
+  assert.equal(Array.isArray(json.leads), true);
+});
+
 test("renders empty saved lead exports in every supported format", async () => {
   const columns = parseExportColumns("name,primaryEmail,facebookPage,lastContactedAt");
 
   assert.match(renderCsv([], columns).toString("utf8"), /Business Name/);
   assert.ok(renderXlsx([], columns).length > 0);
+  assert.ok(renderJson([]).length > 0);
   assert.ok((await renderDocx([], columns)).length > 0);
   assert.ok((await renderPdf([], columns)).length > 0);
 });
-

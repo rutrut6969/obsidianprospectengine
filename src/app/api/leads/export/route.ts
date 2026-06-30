@@ -8,6 +8,7 @@ import {
   parseExportColumns,
   renderCsv,
   renderDocx,
+  renderJson,
   renderPdf,
   renderXlsx,
 } from "@/lib/export/leads-export";
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const format = (searchParams.get("format") ?? "csv").toUpperCase() as ExportFormat;
-    if (!["CSV", "XLSX", "PDF", "DOCX"].includes(format)) {
+    if (!["CSV", "XLSX", "JSON", "PDF", "DOCX"].includes(format)) {
       return NextResponse.json({ error: "Unsupported export format" }, { status: 400 });
     }
 
@@ -45,9 +46,11 @@ export async function GET(request: NextRequest) {
         ? renderCsv(leads, columns)
         : format === "XLSX"
           ? renderXlsx(leads, columns)
-          : format === "DOCX"
-            ? await renderDocx(leads, columns)
-            : await renderPdf(leads, columns);
+          : format === "JSON"
+            ? renderJson(leads)
+            : format === "DOCX"
+              ? await renderDocx(leads, columns)
+              : await renderPdf(leads, columns);
 
     await prisma.exportLog.create({
       data: {

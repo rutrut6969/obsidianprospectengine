@@ -22,6 +22,7 @@ export const EXPORT_COLUMNS = [
   "primaryEmail",
   "websiteUrl",
   "facebookPage",
+  "placeId",
   "address",
   "city",
   "state",
@@ -45,6 +46,7 @@ const HEADERS: Record<ExportColumn, string> = {
   primaryEmail: "Email",
   websiteUrl: "Website",
   facebookPage: "Facebook Page",
+  placeId: "Google Place ID",
   address: "Address",
   city: "City",
   state: "State",
@@ -94,6 +96,28 @@ type ExportLead = Prisma.BusinessLeadGetPayload<{
     };
   };
 }>;
+
+export interface ImportableLeadExportRow {
+  businessName: string;
+  category: string | null;
+  phone: string | null;
+  primaryEmail: string | null;
+  website: string | null;
+  facebookUrl: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+  leadScore: number;
+  status: string;
+  notes: string | null;
+  tags: string[];
+  source: string;
+  googlePlaceId: string | null;
+  originalSavedLeadId: string;
+  createdAt: string;
+  exportedAt: string;
+}
 
 export function parseExportColumns(value: string | null): ExportColumn[] {
   if (!value) return [...EXPORT_COLUMNS];
@@ -212,12 +236,40 @@ function lastContactedAt(row: ExportLead): Date | null {
 export function valueFor(row: ExportLead, column: ExportColumn): string {
   if (column === "primaryEmail") return row.primaryEmail ?? "";
   if (column === "facebookPage") return facebookPageFor(row);
+  if (column === "placeId") return row.placeId ?? "";
   if (column === "tags") return row.tags.join(", ");
   if (column === "createdAt") return formatDate(row.createdAt);
   if (column === "lastContactedAt") return formatDate(lastContactedAt(row));
   const value = row[column];
   if (value == null) return "";
   return String(value);
+}
+
+export function toImportableLeadRows(
+  leads: ExportLead[],
+  exportedAt = new Date()
+): ImportableLeadExportRow[] {
+  return leads.map((lead) => ({
+    businessName: lead.name,
+    category: lead.category,
+    phone: lead.phone,
+    primaryEmail: lead.primaryEmail,
+    website: lead.websiteUrl,
+    facebookUrl: facebookPageFor(lead) || null,
+    address: lead.address,
+    city: lead.city,
+    state: lead.state,
+    postalCode: null,
+    leadScore: lead.leadScore,
+    status: lead.status,
+    notes: lead.notes,
+    tags: lead.tags,
+    source: "obsidian-prospect-engine",
+    googlePlaceId: lead.placeId,
+    originalSavedLeadId: lead.id,
+    createdAt: lead.createdAt.toISOString(),
+    exportedAt: exportedAt.toISOString(),
+  }));
 }
 
 function tableRows(leads: ExportLead[], columns: ExportColumn[]) {
@@ -246,6 +298,23 @@ export function renderXlsx(leads: ExportLead[], columns: ExportColumn[]): Buffer
   const worksheet = XLSX.utils.json_to_sheet(tableRows(leads, columns));
   XLSX.utils.book_append_sheet(workbook, worksheet, "Saved Leads");
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+}
+
+export function renderJson(leads: ExportLead[]): Buffer {
+  const exportedAt = new Date();
+  return Buffer.from(
+    JSON.stringify(
+      {
+        source: "obsidian-prospect-engine",
+        schema: "saved-leads-import-v1",
+        exportedAt: exportedAt.toISOString(),
+        leads: toImportableLeadRows(leads, exportedAt),
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
 }
 
 export async function renderDocx(leads: ExportLead[], columns: ExportColumn[]): Promise<Buffer> {
@@ -337,6 +406,8 @@ export function exportContentType(format: ExportFormat): string {
       return "text/csv; charset=utf-8";
     case "XLSX":
       return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    case "JSON":
+      return "application/json; charset=utf-8";
     case "DOCX":
       return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     case "PDF":

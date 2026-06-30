@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BriefcaseBusiness, ChevronDown, Download, Trash2, X } from "lucide-react";
+import { BriefcaseBusiness, ChevronDown, Download, Trash2, Upload, X } from "lucide-react";
 import {
   LeadScoreBadge,
   LeadStatusBadge,
@@ -37,6 +37,16 @@ interface SavedLead {
   owner: { fullName: string | null; email: string; role: string } | null;
 }
 
+interface ImportSummary {
+  totalRows: number;
+  importedCount: number;
+  skippedDuplicateCount: number;
+  failedCount: number;
+  errors: string[];
+  warnings: string[];
+  preview: Array<{ businessName: string; category?: string | null; city?: string | null; state?: string | null }>;
+}
+
 export function SavedLeadsList() {
   const [leads, setLeads] = useState<SavedLead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +62,11 @@ export function SavedLeadsList() {
   const [deleteTarget, setDeleteTarget] = useState<SavedLead | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [convertingId, setConvertingId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
 
   function buildParams() {
     const params = new URLSearchParams();
@@ -94,10 +109,39 @@ export function SavedLeadsList() {
     await fetchLeads();
   }
 
-  function exportLeads(format: "csv" | "xlsx" | "pdf" | "docx") {
+  function exportLeads(format: "csv" | "xlsx" | "json" | "pdf" | "docx") {
     const params = buildParams();
     params.set("format", format);
     window.location.href = `/api/leads/export?${params.toString()}`;
+  }
+
+  async function submitImport(e: React.FormEvent) {
+    e.preventDefault();
+    if (!importFile) {
+      setImportError("Choose a CSV, XLSX, XLS, or JSON file.");
+      return;
+    }
+    setImporting(true);
+    setImportError(null);
+    setImportSummary(null);
+
+    const formData = new FormData();
+    formData.set("file", importFile);
+    const res = await fetch("/api/leads/import", {
+      method: "POST",
+      body: formData,
+    });
+    const data = await res.json();
+    setImporting(false);
+
+    if (!res.ok) {
+      setImportError(data.error ?? "Import failed");
+      return;
+    }
+
+    setImportSummary(data.summary);
+    setImportFile(null);
+    await fetchLeads();
   }
 
   async function convertLead(lead: SavedLead) {
@@ -240,11 +284,24 @@ export function SavedLeadsList() {
         <div>
           <p className="text-sm text-slate-500">{leads.length} leads shown</p>
           <p className="mt-1 text-xs text-slate-600">
-            Export downloads the current saved-lead filters and visible ownership scope.
+            Import supports CSV, XLSX, and JSON. PDF and DOCX are export-only.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {(["csv", "xlsx", "pdf", "docx"] as const).map((format) => (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setImportOpen(true);
+              setImportError(null);
+              setImportSummary(null);
+            }}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Import Leads
+          </Button>
+          {(["csv", "xlsx", "json", "pdf", "docx"] as const).map((format) => (
             <Button
               key={format}
               type="button"
@@ -478,6 +535,123 @@ export function SavedLeadsList() {
           </div>
         </div>
       )}
+
+      {importOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="w-full max-w-2xl rounded-lg border border-slate-800 bg-slate-950 p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-100">Import Leads</h2>
+                <p className="mt-2 text-sm text-slate-400">
+                  Upload a CSV, XLSX, XLS, or JSON export. Imported leads are saved under your account;
+                  duplicates in your saved leads are skipped.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="text-slate-500 hover:text-slate-200"
+                onClick={() => setImportOpen(false)}
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={submitImport} className="mt-5 space-y-4">
+              <div>
+                <Label htmlFor="lead-import-file">Lead file</Label>
+                <Input
+                  id="lead-import-file"
+                  type="file"
+                  accept=".csv,.xlsx,.xls,.json,text/csv,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={(event) => {
+                    setImportFile(event.target.files?.[0] ?? null);
+                    setImportError(null);
+                    setImportSummary(null);
+                  }}
+                />
+                <p className="mt-2 text-xs text-slate-500">
+                  Maximum size: 5 MB. XLSX formulas are imported as cell data only.
+                </p>
+              </div>
+
+              {importError && (
+                <div className="rounded-lg border border-red-800/50 bg-red-950/30 px-4 py-3 text-sm text-red-200">
+                  {importError}
+                </div>
+              )}
+
+              {importSummary && (
+                <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 text-sm">
+                  <div className="grid gap-3 sm:grid-cols-4">
+                    <SummaryStat label="Rows" value={importSummary.totalRows} />
+                    <SummaryStat label="Imported" value={importSummary.importedCount} tone="green" />
+                    <SummaryStat label="Duplicates" value={importSummary.skippedDuplicateCount} />
+                    <SummaryStat label="Failed" value={importSummary.failedCount} tone={importSummary.failedCount ? "red" : "slate"} />
+                  </div>
+                  {importSummary.preview.length > 0 ? (
+                    <div className="mt-4">
+                      <p className="text-xs uppercase text-slate-500">Preview</p>
+                      <ul className="mt-2 space-y-1 text-slate-300">
+                        {importSummary.preview.map((lead, index) => (
+                          <li key={`${lead.businessName}-${index}`}>
+                            {lead.businessName}
+                            {[lead.category, lead.city, lead.state].filter(Boolean).length > 0
+                              ? ` | ${[lead.category, lead.city, lead.state].filter(Boolean).join(" | ")}`
+                              : ""}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-slate-400">No valid leads were found in the uploaded file.</p>
+                  )}
+                  {[...importSummary.warnings, ...importSummary.errors].length > 0 && (
+                    <div className="mt-4 max-h-36 overflow-auto rounded border border-slate-800 bg-slate-950 p-3">
+                      {[...importSummary.warnings, ...importSummary.errors].slice(0, 20).map((message) => (
+                        <p key={message} className="text-xs text-slate-400">{message}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="grid gap-2 sm:flex sm:justify-end">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setImportOpen(false)}
+                >
+                  Close
+                </Button>
+                <Button type="submit" loading={importing}>
+                  <Upload className="h-4 w-4" />
+                  Upload and Import
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SummaryStat({
+  label,
+  value,
+  tone = "slate",
+}: {
+  label: string;
+  value: number;
+  tone?: "slate" | "green" | "red";
+}) {
+  const color =
+    tone === "green" ? "text-emerald-300" : tone === "red" ? "text-red-300" : "text-slate-200";
+  return (
+    <div className="rounded border border-slate-800 bg-slate-950 p-3">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className={`mt-1 text-lg font-semibold ${color}`}>{value}</p>
     </div>
   );
 }
