@@ -1,5 +1,6 @@
 import PDFDocument from "pdfkit";
 import * as XLSX from "xlsx";
+import { join } from "node:path";
 import {
   Document,
   Packer,
@@ -24,7 +25,6 @@ export const EXPORT_COLUMNS = [
   "primaryEmail",
   "websiteUrl",
   "facebookPage",
-  "placeId",
   "address",
   "city",
   "state",
@@ -48,7 +48,6 @@ const HEADERS: Record<ExportColumn, string> = {
   primaryEmail: "Email",
   websiteUrl: "Website",
   facebookPage: "Facebook Page",
-  placeId: "Google Place ID",
   address: "Address",
   city: "City",
   state: "State",
@@ -75,6 +74,8 @@ const CONTACT_ACTIVITY_TYPES: ActivityType[] = [
 ];
 
 const FACEBOOK_HOSTS = ["facebook.com", "fb.com", "m.facebook.com", "www.facebook.com"];
+const PDF_FONT_NAME = "OpeNotoSans";
+const PDF_FONT_PATH = join(process.cwd(), "src/assets/fonts/NotoSans-Regular.ttf");
 
 const ALLOWED_SORTS = new Set([
   "leadScore",
@@ -238,7 +239,6 @@ function lastContactedAt(row: ExportLead): Date | null {
 export function valueFor(row: ExportLead, column: ExportColumn): string {
   if (column === "primaryEmail") return row.primaryEmail ?? "";
   if (column === "facebookPage") return facebookPageFor(row);
-  if (column === "placeId") return row.placeId ?? "";
   if (column === "tags") return row.tags.join(", ");
   if (column === "createdAt") return formatDate(row.createdAt);
   if (column === "lastContactedAt") return formatDate(lastContactedAt(row));
@@ -362,7 +362,12 @@ export async function renderDocx(leads: ExportLead[], columns: ExportColumn[]): 
 }
 
 export async function renderPdf(leads: ExportLead[], columns: ExportColumn[]): Promise<Buffer> {
-  const doc = new PDFDocument({ margin: 36, size: "LETTER", layout: "landscape" });
+  const doc = new PDFDocument({
+    margin: 36,
+    size: "LETTER",
+    layout: "landscape",
+    font: PDF_FONT_PATH,
+  });
   const chunks: Buffer[] = [];
 
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -370,6 +375,8 @@ export async function renderPdf(leads: ExportLead[], columns: ExportColumn[]): P
     doc.on("end", () => resolve(Buffer.concat(chunks)));
   });
 
+  doc.registerFont(PDF_FONT_NAME, PDF_FONT_PATH);
+  doc.font(PDF_FONT_NAME);
   doc.fillColor("#111827").fontSize(18).text("Obsidian Prospect Engine Saved Leads Export");
   doc.fillColor("#475569").fontSize(9).text(`Generated ${new Date().toLocaleString()} | ${leads.length} saved leads`);
   doc.moveDown();

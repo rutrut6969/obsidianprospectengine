@@ -543,7 +543,7 @@ export function SavedLeadsList() {
               <div>
                 <h2 className="text-lg font-semibold text-slate-100">Import Leads</h2>
                 <p className="mt-2 text-sm text-slate-400">
-                  Upload a CSV, XLSX, XLS, or JSON export. Imported leads are saved under your account;
+                  Upload a Saved Leads CSV or XLSX export. Imported leads are saved under your account;
                   duplicates in your saved leads are skipped.
                 </p>
               </div>
@@ -563,7 +563,7 @@ export function SavedLeadsList() {
                 <Input
                   id="lead-import-file"
                   type="file"
-                  accept=".csv,.xlsx,.xls,.json,text/csv,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                   onChange={(event) => {
                     setImportFile(event.target.files?.[0] ?? null);
                     setImportError(null);
@@ -571,7 +571,7 @@ export function SavedLeadsList() {
                   }}
                 />
                 <p className="mt-2 text-xs text-slate-500">
-                  Maximum size: 5 MB. XLSX formulas are imported as cell data only.
+                  Maximum size: 5 MB. PDF and DOCX exports are report-only and cannot be imported.
                 </p>
               </div>
 
@@ -587,7 +587,7 @@ export function SavedLeadsList() {
                     <SummaryStat label="Rows" value={importSummary.totalRows} />
                     <SummaryStat label="Imported" value={importSummary.importedCount} tone="green" />
                     <SummaryStat label="Duplicates" value={importSummary.skippedDuplicateCount} />
-                    <SummaryStat label="Failed" value={importSummary.failedCount} tone={importSummary.failedCount ? "red" : "slate"} />
+                    <SummaryStat label="Invalid" value={importSummary.failedCount} tone={importSummary.failedCount ? "red" : "slate"} />
                   </div>
                   {importSummary.preview.length > 0 ? (
                     <div className="mt-4">

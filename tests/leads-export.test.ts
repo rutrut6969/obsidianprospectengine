@@ -50,6 +50,27 @@ test("export content types are wired for every supported saved-lead format", () 
 
 test("saved lead export columns include requested CRM fields", () => {
   const columns = parseExportColumns(null);
+  assert.deepEqual(columns, [
+    "name",
+    "category",
+    "phone",
+    "primaryEmail",
+    "websiteUrl",
+    "facebookPage",
+    "address",
+    "city",
+    "state",
+    "websiteStatus",
+    "leadScore",
+    "rating",
+    "reviewCount",
+    "status",
+    "notes",
+    "tags",
+    "createdAt",
+    "lastContactedAt",
+  ]);
+  assert.equal(columns.includes("placeId" as never), false);
   assert.equal(columns.includes("primaryEmail"), true);
   assert.equal(columns.includes("facebookPage"), true);
   assert.equal(columns.includes("tags"), true);
@@ -83,5 +104,5 @@ test("renders empty saved lead exports in every supported format", async () => {
   assert.ok(renderXlsx([], columns).length > 0);
   assert.ok(renderJson([]).length > 0);
   assert.ok((await renderDocx([], columns)).length > 0);
-  assert.ok((await renderPdf([], columns)).length > 0);
+  assert.equal((await renderPdf([], columns)).subarray(0, 4).toString("utf8"), "%PDF");
 });

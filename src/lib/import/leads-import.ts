@@ -49,6 +49,9 @@ const FIELD_ALIASES: Record<string, keyof ImportedLeadInput> = {
   zipcode: "postalCode",
   leadscore: "leadScore",
   score: "leadScore",
+  rating: "rating",
+  reviews: "reviewCount",
+  reviewcount: "reviewCount",
   status: "status",
   contactstatus: "status",
   notes: "notes",
@@ -60,6 +63,8 @@ const FIELD_ALIASES: Record<string, keyof ImportedLeadInput> = {
   createdat: "createdAt",
   saveddate: "createdAt",
   createdsaveddate: "createdAt",
+  lastcontacteddate: "lastContactedAt",
+  lastcontactedat: "lastContactedAt",
   exportedat: "exportedAt",
 };
 
@@ -76,6 +81,8 @@ export interface ImportedLeadInput {
   state?: string | null;
   postalCode?: string | null;
   leadScore?: number | null;
+  rating?: number | null;
+  reviewCount?: number | null;
   status?: LeadStatus | null;
   notes?: string | null;
   tags?: string[];
@@ -83,6 +90,7 @@ export interface ImportedLeadInput {
   googlePlaceId?: string | null;
   originalSavedLeadId?: string | null;
   createdAt?: string | null;
+  lastContactedAt?: string | null;
   exportedAt?: string | null;
 }
 
@@ -97,6 +105,12 @@ export interface ImportSummary {
 }
 
 type RawRow = Record<string, unknown>;
+
+export interface ParsedImportedLeadFile {
+  totalRows: number;
+  leads: ImportedLeadInput[];
+  errors: string[];
+}
 
 function normalizeHeader(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
@@ -113,6 +127,34 @@ function cleanNumber(value: unknown): number | null {
   if (value == null || value === "") return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function cleanDate(value: unknown): string | null {
+  const text = cleanString(value, 80);
+  if (!text) return null;
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
+function cleanLeadScore(value: unknown): number | null {
+  const score = cleanNumber(value);
+  if (score == null) return null;
+  if (score < 0 || score > 100) throw new Error("Lead Score must be between 0 and 100.");
+  return Math.round(score);
+}
+
+function cleanRating(value: unknown): number | null {
+  const rating = cleanNumber(value);
+  if (rating == null) return null;
+  if (rating < 0 || rating > 5) throw new Error("Rating must be between 0 and 5.");
+  return Math.round(rating * 10) / 10;
+}
+
+function cleanReviewCount(value: unknown): number | null {
+  const count = cleanNumber(value);
+  if (count == null) return null;
+  if (count < 0) throw new Error("Reviews must be zero or greater.");
+  return Math.round(count);
 }
 
 function cleanTags(value: unknown): string[] {
@@ -171,7 +213,17 @@ function mapRawRow(row: RawRow, rowNumber: number): { lead?: ImportedLeadInput; 
     return { error: `Row ${rowNumber}: missing required businessName.` };
   }
 
-  const leadScore = cleanNumber(normalized.leadScore);
+  let leadScore: number | null = null;
+  let rating: number | null = null;
+  let reviewCount: number | null = null;
+  try {
+    leadScore = cleanLeadScore(normalized.leadScore);
+    rating = cleanRating(normalized.rating);
+    reviewCount = cleanReviewCount(normalized.reviewCount);
+  } catch (error) {
+    return { error: `Row ${rowNumber}: ${error instanceof Error ? error.message : "invalid numeric value."}` };
+  }
+
   const lead: ImportedLeadInput = {
     businessName,
     category: cleanString(normalized.category, 120),
@@ -184,21 +236,24 @@ function mapRawRow(row: RawRow, rowNumber: number): { lead?: ImportedLeadInput; 
     city: cleanString(normalized.city, 120),
     state: cleanString(normalized.state, 40)?.toUpperCase() ?? null,
     postalCode: cleanString(normalized.postalCode, 20),
-    leadScore: leadScore == null ? null : Math.max(0, Math.min(100, Math.round(leadScore))),
+    leadScore,
+    rating,
+    reviewCount,
     status: cleanStatus(normalized.status),
     notes: cleanString(normalized.notes, 3000),
     tags: cleanTags(normalized.tags),
     source: cleanString(normalized.source, 120),
     googlePlaceId: cleanString(normalized.googlePlaceId, 180),
     originalSavedLeadId: cleanString(normalized.originalSavedLeadId, 180),
-    createdAt: cleanString(normalized.createdAt, 80),
+    createdAt: cleanDate(normalized.createdAt),
+    lastContactedAt: cleanDate(normalized.lastContactedAt),
     exportedAt: cleanString(normalized.exportedAt, 80),
   };
 
   return { lead: { ...lead, status: lead.status ?? "SAVED" } };
 }
 
-function normalizeRawRows(rows: RawRow[]): ImportedLeadInput[] {
+function normalizeRawRows(rows: RawRow[]): ParsedImportedLeadFile {
   const leads: ImportedLeadInput[] = [];
   const errors: string[] = [];
   rows.forEach((row, index) => {
@@ -209,7 +264,7 @@ function normalizeRawRows(rows: RawRow[]): ImportedLeadInput[] {
   if (errors.length === rows.length && errors[0]?.includes("missing required businessName")) {
     throw new Error("Missing required column: businessName.");
   }
-  return leads;
+  return { totalRows: rows.length, leads, errors };
 }
 
 function extensionFor(filename: string): string {
@@ -228,7 +283,7 @@ export function validateImportFile(filename: string, size: number) {
   return extension;
 }
 
-export function parseImportedLeadRowsFromBuffer(buffer: Buffer, filename: string): ImportedLeadInput[] {
+export function parseImportedLeadFileFromBuffer(buffer: Buffer, filename: string): ParsedImportedLeadFile {
   const extension = validateImportFile(filename, buffer.byteLength);
 
   if (extension === ".json") {
@@ -244,7 +299,7 @@ export function parseImportedLeadRowsFromBuffer(buffer: Buffer, filename: string
 
   const workbook = XLSX.read(buffer, { type: "buffer", raw: true });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  if (!sheet) return [];
+  if (!sheet) return { totalRows: 0, leads: [], errors: [] };
   const rows = XLSX.utils.sheet_to_json<RawRow>(sheet, {
     defval: "",
     raw: true,
@@ -253,8 +308,13 @@ export function parseImportedLeadRowsFromBuffer(buffer: Buffer, filename: string
   return normalizeRawRows(rows);
 }
 
+export function parseImportedLeadRowsFromBuffer(buffer: Buffer, filename: string): ImportedLeadInput[] {
+  return parseImportedLeadFileFromBuffer(buffer, filename).leads;
+}
+
 async function findImportDuplicate(lead: ImportedLeadInput, userId: string) {
-  const normalizedWebsite = normalizeWebsite(lead.website ?? lead.facebookUrl);
+  const normalizedWebsite = normalizeWebsite(lead.website);
+  const normalizedFacebook = normalizeWebsite(lead.facebookUrl);
   const normalizedPhone = normalizePhone(lead.phone);
   const normalizedName = normalizeText(lead.businessName);
   const city = lead.city?.trim();
@@ -263,6 +323,7 @@ async function findImportDuplicate(lead: ImportedLeadInput, userId: string) {
 
   if (lead.googlePlaceId) OR.push({ placeId: lead.googlePlaceId });
   if (normalizedWebsite) OR.push({ normalizedWebsite });
+  if (normalizedFacebook) OR.push({ normalizedWebsite: normalizedFacebook });
   if (normalizedPhone) OR.push({ normalizedPhone });
   if (normalizedName && city && state) {
     OR.push({ normalizedName, city: { equals: city, mode: "insensitive" }, state });
@@ -284,13 +345,17 @@ async function placeIdExistsForAnotherOwner(placeId: string | null | undefined, 
   return Boolean(existing && existing.ownerId !== userId);
 }
 
-export async function importSavedLeads(leads: ImportedLeadInput[], session: SessionPayload): Promise<ImportSummary> {
+export async function importSavedLeads(
+  leads: ImportedLeadInput[],
+  session: SessionPayload,
+  parsed: Pick<ParsedImportedLeadFile, "totalRows" | "errors"> = { totalRows: leads.length, errors: [] }
+): Promise<ImportSummary> {
   const summary: ImportSummary = {
-    totalRows: leads.length,
+    totalRows: parsed.totalRows,
     importedCount: 0,
     skippedDuplicateCount: 0,
-    failedCount: 0,
-    errors: [],
+    failedCount: parsed.errors.length,
+    errors: [...parsed.errors],
     warnings: [],
     preview: leads.slice(0, 5),
   };
@@ -315,8 +380,8 @@ export async function importSavedLeads(leads: ImportedLeadInput[], session: Sess
         state: lead.state,
         phone: lead.phone,
         websiteUrl,
-        rating: null,
-        reviewCount: null,
+        rating: lead.rating,
+        reviewCount: lead.reviewCount,
         websiteStatus,
         leadScore: lead.leadScore ?? (websiteStatus === "NO_WEBSITE" ? 100 : websiteStatus === "FACEBOOK_ONLY" ? 90 : 0),
         notes: lead.notes,
@@ -372,6 +437,8 @@ export async function importSavedLeads(leads: ImportedLeadInput[], session: Sess
             metadata: {
               importedSource: lead.source ?? "uploaded-file",
               originalSavedLeadId: lead.originalSavedLeadId,
+              originalCreatedAt: lead.createdAt,
+              originalLastContactedAt: lead.lastContactedAt,
               exportedAt: lead.exportedAt,
               importedAt: new Date().toISOString(),
             },

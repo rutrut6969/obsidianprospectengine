@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireSession } from "@/lib/auth/guards";
 import {
   importSavedLeads,
-  parseImportedLeadRowsFromBuffer,
+  parseImportedLeadFileFromBuffer,
   validateImportFile,
 } from "@/lib/import/leads-import";
 
@@ -19,8 +19,8 @@ export async function POST(request: NextRequest) {
 
     validateImportFile(file.name, file.size);
     const buffer = Buffer.from(await file.arrayBuffer());
-    const leads = parseImportedLeadRowsFromBuffer(buffer, file.name);
-    const summary = await importSavedLeads(leads, auth.session);
+    const parsed = parseImportedLeadFileFromBuffer(buffer, file.name);
+    const summary = await importSavedLeads(parsed.leads, auth.session, parsed);
 
     return NextResponse.json({ summary });
   } catch (error) {
@@ -31,4 +31,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
