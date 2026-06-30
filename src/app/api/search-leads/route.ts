@@ -4,6 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { milesToMeters, searchPlaces } from "@/lib/google-places";
 import { auditWebsite } from "@/lib/website-audit";
 import { requireSession } from "@/lib/auth/guards";
+import {
+  isQualifyingLead,
+  MIN_VISIBLE_LEAD_SCORE,
+  parseLeadSearchWebsiteFilter,
+} from "@/lib/search-filters";
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,6 +23,7 @@ export async function POST(request: NextRequest) {
       radius = 10,
       maxResults = 20,
       auditWebsites = true,
+      websiteStatusFilter = "ALL",
     } = body as {
       category?: string;
       city?: string;
@@ -25,7 +31,9 @@ export async function POST(request: NextRequest) {
       radius?: number;
       maxResults?: number;
       auditWebsites?: boolean;
+      websiteStatusFilter?: string;
     };
+    const parsedWebsiteStatusFilter = parseLeadSearchWebsiteFilter(websiteStatusFilter);
 
     if (!category?.trim() || !city?.trim() || !state?.trim()) {
       return NextResponse.json(
@@ -43,18 +51,6 @@ export async function POST(request: NextRequest) {
       state: state.trim().toUpperCase(),
       radiusMeters,
       maxResults: limit,
-    });
-
-    const searchRun = await prisma.searchRun.create({
-      data: {
-        userId: auth.session.userId,
-        query: category.trim(),
-        city: city.trim(),
-        state: state.trim().toUpperCase(),
-        radius: Number(radius) || 10,
-        maxResults: limit,
-        resultCount: places.length,
-      },
     });
 
     const leads = await Promise.all(
@@ -119,11 +115,30 @@ export async function POST(request: NextRequest) {
         };
       })
     );
+    const qualifyingLeads = leads.filter((lead) =>
+      isQualifyingLead(lead, parsedWebsiteStatusFilter)
+    );
+
+    const searchRun = await prisma.searchRun.create({
+      data: {
+        userId: auth.session.userId,
+        query: category.trim(),
+        city: city.trim(),
+        state: state.trim().toUpperCase(),
+        radius: Number(radius) || 10,
+        maxResults: limit,
+        resultCount: qualifyingLeads.length,
+      },
+    });
 
     return NextResponse.json({
       searchRunId: searchRun.id,
-      resultCount: leads.length,
-      leads,
+      resultCount: qualifyingLeads.length,
+      totalScanned: leads.length,
+      filteredOutCount: leads.length - qualifyingLeads.length,
+      websiteStatusFilter: parsedWebsiteStatusFilter,
+      minimumLeadScore: MIN_VISIBLE_LEAD_SCORE,
+      leads: qualifyingLeads,
     });
   } catch (error) {
     console.error("[search-leads]", error);

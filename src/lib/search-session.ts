@@ -1,4 +1,5 @@
 import { SearchLeadResult } from "@/types/lead";
+import { LeadSearchWebsiteFilter } from "@/lib/search-filters";
 
 const STORAGE_KEY = "ope_search_results";
 const META_KEY = "ope_search_meta";
@@ -9,6 +10,10 @@ export interface SearchMeta {
   state: string;
   radius: number;
   maxResults: number;
+  websiteStatusFilter: LeadSearchWebsiteFilter;
+  minimumLeadScore: number;
+  totalScanned?: number;
+  filteredOutCount?: number;
   searchRunId?: string;
   searchedAt: string;
 }

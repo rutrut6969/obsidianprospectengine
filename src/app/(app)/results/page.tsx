@@ -2,12 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Download, Search } from "lucide-react";
 import { LeadsTable } from "@/components/search/leads-table";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { loadSearchResults } from "@/lib/search-session";
+import {
+  LEAD_SEARCH_WEBSITE_FILTER_LABELS,
+  MIN_VISIBLE_LEAD_SCORE,
+} from "@/lib/search-filters";
 import { SearchLeadResult } from "@/types/lead";
-import { Download, Search } from "lucide-react";
 
 export default function ResultsPage() {
   const [leads, setLeads] = useState<SearchLeadResult[]>([]);
@@ -27,6 +31,9 @@ export default function ResultsPage() {
     window.location.href = `/api/leads/export?${params.toString()}`;
   }
 
+  const activeFilter = meta?.websiteStatusFilter ?? "ALL";
+  const minimumLeadScore = meta?.minimumLeadScore ?? MIN_VISIBLE_LEAD_SCORE;
+
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-end justify-between gap-4">
@@ -35,8 +42,9 @@ export default function ResultsPage() {
           <h1 className="mt-1 text-3xl font-bold text-slate-100">Lead Results</h1>
           {meta && (
             <p className="mt-2 text-slate-400">
-              {meta.category} · {meta.city}, {meta.state} · {meta.radius} mi ·{" "}
-              <span className="text-emerald-400">{leads.length} leads</span>
+              {meta.category} | {meta.city}, {meta.state} | {meta.radius} mi |{" "}
+              <span className="text-emerald-400">{leads.length} leads</span> |{" "}
+              {LEAD_SEARCH_WEBSITE_FILTER_LABELS[activeFilter]} | score {minimumLeadScore}+
             </p>
           )}
         </div>
@@ -66,15 +74,15 @@ export default function ResultsPage() {
           title="Search Results"
           description={
             loaded && leads.length === 0
-              ? "No results in session. Run a new search."
+              ? `No leads found with score ${minimumLeadScore}+ for this filter.`
               : "Save high-priority leads to your CRM"
           }
         />
         <CardBody className="p-0">
           {!loaded ? (
-            <p className="py-12 text-center text-slate-500">Loading…</p>
+            <p className="py-12 text-center text-slate-500">Loading...</p>
           ) : (
-            <LeadsTable leads={leads} />
+            <LeadsTable leads={leads} activeFilter={activeFilter} />
           )}
         </CardBody>
       </Card>

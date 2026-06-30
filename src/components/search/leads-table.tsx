@@ -5,13 +5,20 @@ import { ExternalLink, Save, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LeadScoreBadge, WebsiteStatusBadge } from "@/components/lead-badges";
 import { SearchLeadResult } from "@/types/lead";
+import {
+  LEAD_SEARCH_WEBSITE_FILTER_LABELS,
+  LeadSearchWebsiteFilter,
+  MIN_VISIBLE_LEAD_SCORE,
+} from "@/lib/search-filters";
 
 export function LeadsTable({
   leads,
   showSave = true,
+  activeFilter = "ALL",
 }: {
   leads: SearchLeadResult[];
   showSave?: boolean;
+  activeFilter?: LeadSearchWebsiteFilter;
 }) {
   const [savedIds, setSavedIds] = useState<Set<string>>(new Set());
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -37,13 +44,22 @@ export function LeadsTable({
   if (leads.length === 0) {
     return (
       <p className="py-12 text-center text-slate-500">
-        No leads to display. Run a search first.
+        No leads found with score {MIN_VISIBLE_LEAD_SCORE}+ for this filter.
       </p>
     );
   }
 
   return (
     <div>
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-slate-500">Active filter:</span>
+        <span className="rounded-full border border-purple-500/30 bg-purple-600/15 px-3 py-1 text-purple-100">
+          {LEAD_SEARCH_WEBSITE_FILTER_LABELS[activeFilter]}
+        </span>
+        <span className="rounded-full border border-emerald-500/30 bg-emerald-600/15 px-3 py-1 text-emerald-100">
+          Score {MIN_VISIBLE_LEAD_SCORE}+
+        </span>
+      </div>
       <div className="space-y-3 md:hidden">
         {leads.map((lead) => (
           <div key={lead.placeId} className="rounded-lg border border-slate-800 bg-slate-950/60 p-4">

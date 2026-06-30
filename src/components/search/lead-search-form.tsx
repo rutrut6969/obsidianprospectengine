@@ -7,6 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { saveSearchResults } from "@/lib/search-session";
+import {
+  LEAD_SEARCH_WEBSITE_FILTER_LABELS,
+  LeadSearchWebsiteFilter,
+  MIN_VISIBLE_LEAD_SCORE,
+} from "@/lib/search-filters";
 import { SearchLeadResult } from "@/types/lead";
 
 const US_STATES = [
@@ -43,6 +48,8 @@ export function LeadSearchForm() {
   const [state, setState] = useState("TX");
   const [radius, setRadius] = useState(10);
   const [maxResults, setMaxResults] = useState(20);
+  const [websiteStatusFilter, setWebsiteStatusFilter] =
+    useState<LeadSearchWebsiteFilter>("ALL");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -72,6 +79,7 @@ export function LeadSearchForm() {
           radius,
           maxResults,
           auditWebsites: true,
+          websiteStatusFilter,
         }),
       });
 
@@ -85,6 +93,10 @@ export function LeadSearchForm() {
         state,
         radius,
         maxResults,
+        websiteStatusFilter: data.websiteStatusFilter ?? websiteStatusFilter,
+        minimumLeadScore: data.minimumLeadScore ?? MIN_VISIBLE_LEAD_SCORE,
+        totalScanned: data.totalScanned,
+        filteredOutCount: data.filteredOutCount,
         searchRunId: data.searchRunId,
         searchedAt: new Date().toISOString(),
       });
@@ -189,6 +201,24 @@ export function LeadSearchForm() {
               value={maxResults}
               onChange={(e) => setMaxResults(Number(e.target.value))}
             />
+          </div>
+
+          <div className="sm:col-span-2">
+            <Label htmlFor="websiteStatusFilter">Website Status Filter</Label>
+            <Select
+              id="websiteStatusFilter"
+              value={websiteStatusFilter}
+              onChange={(e) => setWebsiteStatusFilter(e.target.value as LeadSearchWebsiteFilter)}
+            >
+              {(Object.keys(LEAD_SEARCH_WEBSITE_FILTER_LABELS) as LeadSearchWebsiteFilter[]).map((filter) => (
+                <option key={filter} value={filter}>
+                  {LEAD_SEARCH_WEBSITE_FILTER_LABELS[filter]}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-2 text-xs text-slate-500">
+              Normal results only include leads with score {MIN_VISIBLE_LEAD_SCORE}+.
+            </p>
           </div>
 
           {error && (
