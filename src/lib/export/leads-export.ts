@@ -76,6 +76,8 @@ const CONTACT_ACTIVITY_TYPES: ActivityType[] = [
 const FACEBOOK_HOSTS = ["facebook.com", "fb.com", "m.facebook.com", "www.facebook.com"];
 const PDF_FONT_NAME = "OpeNotoSans";
 const PDF_FONT_PATH = join(process.cwd(), "src/assets/fonts/NotoSans-Regular.ttf");
+const PDF_PAGE_MARGIN = 48;
+const PDF_CARD_GAP = 14;
 
 const ALLOWED_SORTS = new Set([
   "leadScore",
@@ -99,6 +101,19 @@ type ExportLead = Prisma.BusinessLeadGetPayload<{
     };
   };
 }>;
+
+type ExportFilters = {
+  status?: string | null;
+  q?: string | null;
+  minScore?: string | null;
+  category?: string | null;
+  websiteStatus?: string | null;
+  ownership?: string | null;
+  city?: string | null;
+  state?: string | null;
+  sort?: string | null;
+  direction?: string | null;
+};
 
 export interface ImportableLeadExportRow {
   businessName: string;
@@ -361,12 +376,226 @@ export async function renderDocx(leads: ExportLead[], columns: ExportColumn[]): 
   return Packer.toBuffer(doc);
 }
 
-export async function renderPdf(leads: ExportLead[], columns: ExportColumn[]): Promise<Buffer> {
+function titleCase(value: string): string {
+  return value
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function websiteStatusLabel(value: string | null | undefined): string {
+  if (!value) return "Unknown";
+  return titleCase(value);
+}
+
+function statusLabel(value: string | null | undefined): string {
+  if (!value) return "Saved";
+  return titleCase(value);
+}
+
+function statusBadgeColor(label: string) {
+  if (label === "No Website") return { fill: "#fee2e2", stroke: "#fecaca", text: "#991b1b" };
+  if (label === "Facebook Only") return { fill: "#dbeafe", stroke: "#bfdbfe", text: "#1d4ed8" };
+  if (label === "Contacted") return { fill: "#dcfce7", stroke: "#bbf7d0", text: "#166534" };
+  if (label === "Saved") return { fill: "#f1f5f9", stroke: "#cbd5e1", text: "#334155" };
+  return { fill: "#f8fafc", stroke: "#e2e8f0", text: "#475569" };
+}
+
+function activeFilterLines(filters?: ExportFilters): string[] {
+  if (!filters) return ["All saved leads"];
+  const labels: Record<keyof ExportFilters, string> = {
+    status: "Status",
+    q: "Search",
+    minScore: "Minimum score",
+    category: "Category",
+    websiteStatus: "Website status",
+    ownership: "Ownership",
+    city: "City",
+    state: "State",
+    sort: "Sort",
+    direction: "Direction",
+  };
+  const lines = Object.entries(filters)
+    .filter(([, value]) => value != null && String(value).trim() !== "")
+    .map(([key, value]) => `${labels[key as keyof ExportFilters]}: ${value}`);
+  return lines.length > 0 ? lines : ["All saved leads"];
+}
+
+function addressFor(lead: ExportLead): string {
+  return [lead.address, lead.city, lead.state].filter(Boolean).join(", ");
+}
+
+function ratingFor(lead: ExportLead): string {
+  if (lead.rating == null && lead.reviewCount == null) return "No rating";
+  if (lead.rating == null) return `${lead.reviewCount ?? 0} reviews`;
+  return `${lead.rating.toFixed(1)} stars (${lead.reviewCount ?? 0} reviews)`;
+}
+
+function leadGroups(leads: ExportLead[]) {
+  const order = ["NO_WEBSITE", "FACEBOOK_ONLY", "BROKEN_WEBSITE", "OUTDATED_WEBSITE", "HAS_WEBSITE", "UNKNOWN"];
+  const groups = new Map<string, ExportLead[]>();
+  for (const lead of leads) {
+    const key = lead.websiteStatus ?? "UNKNOWN";
+    groups.set(key, [...(groups.get(key) ?? []), lead]);
+  }
+  return [...groups.entries()].sort(([a], [b]) => {
+    const indexA = order.indexOf(a);
+    const indexB = order.indexOf(b);
+    return (indexA === -1 ? order.length : indexA) - (indexB === -1 ? order.length : indexB);
+  });
+}
+
+function ensurePdfSpace(doc: PDFKit.PDFDocument, height: number) {
+  if (doc.y + height > doc.page.height - PDF_PAGE_MARGIN) {
+    doc.addPage();
+  }
+}
+
+function drawBadge(doc: PDFKit.PDFDocument, label: string, x: number, y: number) {
+  const colors = statusBadgeColor(label);
+  doc.font(PDF_FONT_NAME).fontSize(7);
+  const width = doc.widthOfString(label) + 14;
+  doc.roundedRect(x, y, width, 15, 7).fillAndStroke(colors.fill, colors.stroke);
+  doc.fillColor(colors.text).text(label, x + 7, y + 4, { width: width - 14, lineBreak: false });
+  return width;
+}
+
+function textHeight(doc: PDFKit.PDFDocument, text: string, width: number, fontSize = 9) {
+  doc.font(PDF_FONT_NAME).fontSize(fontSize);
+  return doc.heightOfString(text || "-", { width });
+}
+
+function leadCardHeight(doc: PDFKit.PDFDocument, lead: ExportLead, width: number) {
+  const contentWidth = width - 32;
+  const columnWidth = (contentWidth - 18) / 2;
+  const notes = lead.notes?.trim() || "";
+  const tags = lead.tags.length > 0 ? lead.tags.join(", ") : "";
+  const leftRows = [
+    lead.category ?? "Uncategorized",
+    `Lead score: ${lead.leadScore}`,
+    `Website status: ${websiteStatusLabel(lead.websiteStatus)}`,
+    ratingFor(lead),
+  ];
+  const rightRows = [
+    lead.phone ?? "No phone",
+    lead.primaryEmail ?? "No email",
+    lead.websiteUrl ?? "No website",
+    facebookPageFor(lead) || "No Facebook page",
+    addressFor(lead) || "No address",
+  ];
+  const leftHeight = leftRows.reduce((total, row) => total + textHeight(doc, row, columnWidth, 8) + 5, 0);
+  const rightHeight = rightRows.reduce((total, row) => total + textHeight(doc, row, columnWidth, 8) + 5, 0);
+  const notesHeight = notes ? textHeight(doc, notes, contentWidth, 8) + 18 : 0;
+  const tagsHeight = tags ? textHeight(doc, tags, contentWidth, 8) + 18 : 0;
+  return Math.max(118, 48 + Math.max(leftHeight, rightHeight) + notesHeight + tagsHeight);
+}
+
+function drawKeyValue(
+  doc: PDFKit.PDFDocument,
+  label: string,
+  value: string,
+  x: number,
+  y: number,
+  width: number
+) {
+  doc.font(PDF_FONT_NAME).fontSize(6.5).fillColor("#64748b").text(label.toUpperCase(), x, y, {
+    width,
+    lineBreak: false,
+  });
+  doc.font(PDF_FONT_NAME).fontSize(8).fillColor("#0f172a").text(value || "-", x, y + 9, {
+    width,
+  });
+  return y + 9 + doc.heightOfString(value || "-", { width }) + 6;
+}
+
+function drawLeadCard(doc: PDFKit.PDFDocument, lead: ExportLead, width: number) {
+  const height = leadCardHeight(doc, lead, width);
+  ensurePdfSpace(doc, height + PDF_CARD_GAP);
+  const x = PDF_PAGE_MARGIN;
+  const y = doc.y;
+  const contentX = x + 16;
+  const contentY = y + 14;
+  const contentWidth = width - 32;
+  const columnWidth = (contentWidth - 18) / 2;
+
+  doc.roundedRect(x, y, width, height, 8).fillAndStroke("#ffffff", "#dbe3ef");
+  doc.font(PDF_FONT_NAME).fontSize(13).fillColor("#0f172a").text(lead.name, contentX, contentY, {
+    width: contentWidth - 180,
+  });
+  drawBadge(doc, websiteStatusLabel(lead.websiteStatus), x + width - 166, contentY);
+  drawBadge(doc, statusLabel(lead.status), x + width - 78, contentY);
+
+  let leftY = contentY + 28;
+  leftY = drawKeyValue(doc, "Category", lead.category ?? "Uncategorized", contentX, leftY, columnWidth);
+  leftY = drawKeyValue(doc, "Lead Score", String(lead.leadScore), contentX, leftY, columnWidth);
+  leftY = drawKeyValue(doc, "Website Status", websiteStatusLabel(lead.websiteStatus), contentX, leftY, columnWidth);
+  leftY = drawKeyValue(doc, "Rating / Reviews", ratingFor(lead), contentX, leftY, columnWidth);
+
+  let rightY = contentY + 28;
+  const rightX = contentX + columnWidth + 18;
+  rightY = drawKeyValue(doc, "Phone", lead.phone ?? "No phone", rightX, rightY, columnWidth);
+  rightY = drawKeyValue(doc, "Email", lead.primaryEmail ?? "No email", rightX, rightY, columnWidth);
+  rightY = drawKeyValue(doc, "Website", lead.websiteUrl ?? "No website", rightX, rightY, columnWidth);
+  rightY = drawKeyValue(doc, "Facebook", facebookPageFor(lead) || "No Facebook page", rightX, rightY, columnWidth);
+  rightY = drawKeyValue(doc, "Address", addressFor(lead) || "No address", rightX, rightY, columnWidth);
+
+  let detailY = Math.max(leftY, rightY) + 4;
+  if (lead.notes?.trim()) {
+    detailY = drawKeyValue(doc, "Notes", lead.notes.trim(), contentX, detailY, contentWidth);
+  }
+  if (lead.tags.length > 0) {
+    drawKeyValue(doc, "Tags", lead.tags.join(", "), contentX, detailY, contentWidth);
+  }
+
+  doc.y = y + height + PDF_CARD_GAP;
+}
+
+function drawPdfHeader(doc: PDFKit.PDFDocument, leads: ExportLead[], filters?: ExportFilters) {
+  const generatedAt = new Date();
+  const pageWidth = doc.page.width - PDF_PAGE_MARGIN * 2;
+
+  doc.font(PDF_FONT_NAME).fontSize(22).fillColor("#0f172a").text("Obsidian Prospect Engine", PDF_PAGE_MARGIN, PDF_PAGE_MARGIN);
+  doc.font(PDF_FONT_NAME).fontSize(10).fillColor("#475569").text("Saved Leads Prospect Packet", PDF_PAGE_MARGIN, doc.y + 2);
+  doc.moveDown(1.2);
+
+  const summaryTop = doc.y;
+  const cardWidth = (pageWidth - 20) / 3;
+  const summary = [
+    ["Export Date", generatedAt.toLocaleString()],
+    ["Total Leads", String(leads.length)],
+    ["Format", "Prospect packet"],
+  ];
+  summary.forEach(([label, value], index) => {
+    const x = PDF_PAGE_MARGIN + index * (cardWidth + 10);
+    doc.roundedRect(x, summaryTop, cardWidth, 42, 6).fillAndStroke("#f8fafc", "#e2e8f0");
+    doc.font(PDF_FONT_NAME).fontSize(7).fillColor("#64748b").text(label.toUpperCase(), x + 10, summaryTop + 9, { width: cardWidth - 20 });
+    doc.font(PDF_FONT_NAME).fontSize(10).fillColor("#0f172a").text(value, x + 10, summaryTop + 22, { width: cardWidth - 20 });
+  });
+  doc.y = summaryTop + 58;
+
+  doc.font(PDF_FONT_NAME).fontSize(8).fillColor("#64748b").text("ACTIVE FILTERS", PDF_PAGE_MARGIN, doc.y);
+  doc.moveDown(0.4);
+  doc.font(PDF_FONT_NAME).fontSize(9).fillColor("#334155");
+  for (const line of activeFilterLines(filters)) {
+    doc.text(line, { width: pageWidth });
+  }
+  doc.moveDown(1);
+  doc.moveTo(PDF_PAGE_MARGIN, doc.y).lineTo(doc.page.width - PDF_PAGE_MARGIN, doc.y).strokeColor("#cbd5e1").stroke();
+  doc.moveDown(1);
+}
+
+export async function renderPdf(
+  leads: ExportLead[],
+  _columns: ExportColumn[],
+  options: { filters?: ExportFilters } = {}
+): Promise<Buffer> {
   const doc = new PDFDocument({
-    margin: 36,
+    margin: PDF_PAGE_MARGIN,
     size: "LETTER",
-    layout: "landscape",
+    layout: "portrait",
     font: PDF_FONT_PATH,
+    bufferPages: true,
   });
   const chunks: Buffer[] = [];
 
@@ -377,32 +606,37 @@ export async function renderPdf(leads: ExportLead[], columns: ExportColumn[]): P
 
   doc.registerFont(PDF_FONT_NAME, PDF_FONT_PATH);
   doc.font(PDF_FONT_NAME);
-  doc.fillColor("#111827").fontSize(18).text("Obsidian Prospect Engine Saved Leads Export");
-  doc.fillColor("#475569").fontSize(9).text(`Generated ${new Date().toLocaleString()} | ${leads.length} saved leads`);
-  doc.moveDown();
+  const pageWidth = doc.page.width - PDF_PAGE_MARGIN * 2;
 
-  const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
-  const columnWidth = pageWidth / columns.length;
-  doc.fontSize(7).fillColor("#0f172a");
-  columns.forEach((column, index) => {
-    doc.text(HEADERS[column], doc.page.margins.left + index * columnWidth, doc.y, {
-      width: columnWidth - 4,
-      continued: index !== columns.length - 1,
-    });
-  });
-  doc.text("");
-  doc.moveDown(0.5);
+  drawPdfHeader(doc, leads, options.filters);
 
-  for (const lead of leads) {
-    const y = doc.y;
-    if (y > doc.page.height - 56) doc.addPage();
-    columns.forEach((column, index) => {
-      doc.fillColor("#334155").text(valueFor(lead, column), doc.page.margins.left + index * columnWidth, y, {
-        width: columnWidth - 4,
-        height: 28,
-      });
+  if (leads.length === 0) {
+    doc.roundedRect(PDF_PAGE_MARGIN, doc.y, pageWidth, 82, 8).fillAndStroke("#ffffff", "#dbe3ef");
+    doc.font(PDF_FONT_NAME).fontSize(13).fillColor("#0f172a").text("No saved leads matched this export.", PDF_PAGE_MARGIN + 16, doc.y + 20, {
+      width: pageWidth - 32,
     });
-    doc.moveDown(2);
+  } else {
+    for (const [group, groupLeads] of leadGroups(leads)) {
+      ensurePdfSpace(doc, 58);
+      doc.font(PDF_FONT_NAME).fontSize(14).fillColor("#0f172a").text(websiteStatusLabel(group), PDF_PAGE_MARGIN, doc.y);
+      doc.font(PDF_FONT_NAME).fontSize(8).fillColor("#64748b").text(`${groupLeads.length} leads`, PDF_PAGE_MARGIN, doc.y + 2);
+      doc.moveDown(0.8);
+
+      for (const lead of groupLeads) {
+        drawLeadCard(doc, lead, pageWidth);
+      }
+    }
+  }
+
+  const range = doc.bufferedPageRange();
+  for (let index = range.start; index < range.start + range.count; index += 1) {
+    doc.switchToPage(index);
+    doc.font(PDF_FONT_NAME).fontSize(7).fillColor("#94a3b8").text(
+      `Obsidian Prospect Engine | Page ${index + 1} of ${range.count}`,
+      PDF_PAGE_MARGIN,
+      doc.page.height - 28,
+      { width: pageWidth, align: "center" }
+    );
   }
 
   doc.end();

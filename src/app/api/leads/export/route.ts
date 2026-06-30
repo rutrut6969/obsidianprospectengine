@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
             ? renderJson(leads)
             : format === "DOCX"
               ? await renderDocx(leads, columns)
-              : await renderPdf(leads, columns);
+              : await renderPdf(leads, columns, { filters });
 
     if (format !== "JSON") {
       await prisma.exportLog.create({
